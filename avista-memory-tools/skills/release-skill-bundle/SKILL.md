@@ -41,6 +41,7 @@ Read `plugin.json` to record the current `name` and `version`. The `name` field 
 - For each `skills/<skill-name>/SKILL.md` in the plugin, verify the file exists, has YAML frontmatter, and the `name:` in frontmatter matches the directory name. A mismatch is the most common silent rejection.
 - **Reserved-word check.** Verify that no skill's `name:` field contains the substring `claude` (case-insensitive). The Avista marketplace rejects skill names containing this reserved word with a "Plugin validation failed" error that *does* report the actual rule (unlike many other validation failures). Other reserved words may exist; if any future upload fails with a similar reserved-word message, add the new word to this check. If the check fails, stop and tell the user which skills need renaming and suggest alternatives (e.g. `release-claude-plugin` → `release-skill-bundle`, `claude-md-audit` → `agent-md-audit`).
 - If the source directory is a git repo, verify the working tree is clean (no uncommitted changes outside the version bump you're about to make). If dirty, stop and report the dirty files. Do not bump version against an unclean tree.
+- **If the source directory is a git repo, verify local `main` is in sync with `origin/main`.** Run `git fetch origin main --quiet`, then verify `git rev-parse HEAD` equals `git rev-parse origin/main` (when on main) or `git merge-base --is-ancestor origin/main HEAD` returns 0 (when on a feature branch). If local is behind, the marketplace sync would ship stale code — stop and tell the user to `git pull --rebase` and rerun. If local is ahead with commits not on the remote, those commits will be in the release; confirm with the user that's intended.
 - If `gh` CLI is available, optionally verify the user is authenticated (`gh auth status`).
 
 If any check fails, report the issue and stop.
@@ -63,15 +64,17 @@ Re-validate the JSON after editing (avoid trailing-comma or other syntax mistake
 
 ### Step 5 — Commit and push the source
 
-If the source directory is a git repo, prepare a commit. Cowork's bash sandbox cannot run git writes against the user's repos (the mounted `.git/index.lock` denies the operation) — tell the user to run in their own terminal:
+If the source directory is a git repo, run (or hand off to the user):
 
 ```
 git commit -am "chore(<plugin-name>): release v<NEW_VERSION>" && git push
 ```
 
-Wait for the user to confirm the commit landed and reached the remote before proceeding. For the GitHub-sync path, the marketplace can't see the new version until the commit is pushed to the connected repo.
+If you have direct shell access on the user's machine (e.g. Claude Code on the local host), run it yourself. If you're in a sandboxed environment that can't write to the user's repo (e.g. Cowork, where the mounted `.git/index.lock` denies the operation), tell the user to run it in their own terminal and wait for confirmation.
 
-If the user prefers their own commit-and-push alias (e.g. `gsend`), that's fine — what matters is that the bump commit reaches the remote `main` before Step 6.
+The bump commit must reach the remote `main` before Step 6 — for the GitHub-sync path, the marketplace can't see the new version until then.
+
+If the user prefers their own commit-and-push alias (e.g. `gsend`), that's fine — what matters is that the bump commit reaches the remote `main`.
 
 If the source directory is not a git repo, skip the commit and fall through to the manual-upload path in Step 6 — GitHub sync requires a connected repo.
 
@@ -119,21 +122,23 @@ unzip -l /tmp/<name>.zip | head -20
 
 Every listed path must be prefixed with `<name>/` — e.g. `<name>/.claude-plugin/plugin.json`, `<name>/skills/.../SKILL.md`. If you see paths starting with `.claude-plugin/` or `skills/` at the root with no wrapper, the zip was built from the wrong directory and the marketplace will reject it. Rebuild.
 
-Copy the zip into the Cowork outputs folder so it's accessible from the chat UI:
+Now surface the zip to the user.
+
+**If running in Cowork:** copy the zip into the session's outputs folder (typically `~/Library/Application Support/Claude/local-agent-mode-sessions/<...>/outputs/`) and use the `present_files` tool to render it as a card in chat:
 
 ```
 cp /tmp/<name>.zip <outputs-folder>/<name>.zip
 ```
 
-Use the Cowork outputs path appropriate to the current session (typically `~/Library/Application Support/Claude/local-agent-mode-sessions/<...>/outputs/`).
+**If running in Claude Code or another terminal-attached environment:** the zip is already at `/tmp/<name>.zip` on the user's machine — just tell them the path.
 
-Then use Cowork's `present_files` tool to surface the `.zip` file as a card in chat and give the user upload instructions:
+Either way, give the user these upload instructions:
 
 > The `<name>.zip` file is ready. Upload it through the Anthropic admin UI:
 >
-> 1. Open Claude Desktop → Organization settings → Plugins.
+> 1. Open the Claude desktop app → Organization settings → Plugins.
 > 2. Find the marketplace (or click "Add plugins" → "Upload a file" if this is a new marketplace).
-> 3. Drop in the `.zip` file from the card above (or from the outputs folder).
+> 3. Drop in the `.zip` file.
 > 4. Confirm the upload. Uploading a zip with the same plugin `name` overwrites the existing version automatically — no need to delete the old one first.
 
 If the marketplace rejects the upload with "Plugin validation failed," verify the zip's wrapper structure with `unzip -l <name>.zip | head -5` — every path must be prefixed with `<name>/`. That's the most common cause.
@@ -142,7 +147,7 @@ If the marketplace rejects the upload with "Plugin validation failed," verify th
 
 After the user confirms the marketplace has picked up the new version, suggest they verify it's live:
 
-- In a fresh Cowork or Claude Code session, open the plugin manager and check the version number for the plugin matches the one just released.
+- In a fresh session, open the plugin manager and check the version number for the plugin matches the one just released.
 - Or invoke one of the plugin's skills and check that any updated behavior is present.
 
 If the version still shows as the old one, the marketplace may be caching — give it a few minutes and re-check. If it persists, the new version may have failed validation server-side; check the admin UI for any error messages on the plugin that need addressing.
@@ -154,7 +159,7 @@ The release flow ends here. What the user does next — keep working on `main`, 
 - The `plugin.json` `version` field is the source of truth for what the marketplace serves. Bumping anywhere else (in a skill's SKILL.md frontmatter, in the README) does not affect the version users see.
 - **GitHub sync vs. manual upload.** Anthropic's docs frame manual upload as the right fit for "quick iteration, one-off tools, or teams that don't use GitHub for plugin development." Avista's plugins live in a tracked monorepo, so GitHub sync is the better fit and saves the zip-building step entirely. Manual upload is the documented fallback when sync isn't configured.
 - **Overwriting on upload.** In the manual-upload path, uploading a zip whose `plugin.json` `name` matches an existing plugin overwrites that plugin's version. You do not delete the old one first. This is also how legacy guidance in older sessions described it as a "delete + re-upload" flow — that was never required; uploading with the same name has always been an overwrite.
-- Cowork's outputs folder is ephemeral — any `.zip` produced in the manual-upload path will be cleared between sessions. The durable source lives in the plugin's local working directory (typically `~/Dropbox/dev/claude-plugins/<name>/`).
+- When the manual-upload path runs in Cowork, the `.zip` lands in the session's outputs folder, which is ephemeral — it will be cleared between sessions. The durable source lives in the plugin's local working directory (typically `~/Dropbox/dev/claude-plugins/<name>/`). When the path runs in Claude Code or another terminal-attached environment, the `.zip` is just a regular file at `/tmp/<name>.zip` and stays until the next reboot.
 - **Wrapper directory matters (manual path only).** The zip must contain a single top-level directory matching the plugin name. A flat zip (files at root with no wrapper) is silently rejected by the marketplace with "Plugin validation failed" and no detail. This was the bug that caused the first three manual-upload attempts to fail. Always verify with `unzip -l <name>.zip | head` before uploading.
 - **File extension matters (manual path only).** The marketplace accepts `.zip`, not `.plugin`. The `.plugin` extension is documented in the Anthropic plugin docs as an in-chat installer format, but the Avista org marketplace upload route doesn't accept it.
 - The `zip` step does not respect `.gitignore` — exclusions must be specified on the `zip` command line via `-x`. The exclusion patterns above cover `.git/`, `.DS_Store`, and `node_modules/`; add more for any other build artifacts your plugin produces.
@@ -162,5 +167,5 @@ The release flow ends here. What the user does next — keep working on `main`, 
 ## Refusal cases
 
 - The target directory has no `.claude-plugin/plugin.json`: not a Claude plugin. Tell the user the directory doesn't look like a plugin source and ask for the right path.
-- The plugin's `name` field doesn't match the source directory name: refuse to package until the mismatch is resolved. (Renaming a plugin in `plugin.json` without renaming the directory will produce a zip that Cowork's installer silently rejects.)
+- The plugin's `name` field doesn't match the source directory name: refuse to package until the mismatch is resolved. (Renaming a plugin in `plugin.json` without renaming the directory produces a zip that the marketplace installer silently rejects.)
 - The plugin contains `commands/` instead of `skills/` (legacy format): warn the user that the new format is `skills/<name>/SKILL.md` directories. Offer to migrate, but don't auto-migrate as part of a release.

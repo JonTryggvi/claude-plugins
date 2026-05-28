@@ -26,7 +26,7 @@ Execute in order. Stop at the explicit checkpoint.
 Ask which CLAUDE.md to audit, or infer from context:
 
 - `~/.claude/CLAUDE.md` — global, applies to every Claude session. Default if the user says "audit my CLAUDE.md" without specifying.
-- `<project>/CLAUDE.md` — project-local. Default if the user is currently in a Cowork session with a project mounted and says "audit this project's CLAUDE.md".
+- `<project>/CLAUDE.md` — project-local. Default if the user is currently in a session with a project open and says "audit this project's CLAUDE.md".
 
 Confirm the path with the user before proceeding.
 

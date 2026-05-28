@@ -16,11 +16,12 @@ Bump the plugin header version, commit and push, create the GitHub release, and 
 Run these checks before touching anything. Bail if any fail.
 
 - The repo is on `main` and the working tree is clean (no uncommitted changes, no untracked files that belong in the release).
+- **Local `main` is in sync with `origin/main`.** Run `git fetch origin main --quiet`, then verify `git rev-parse HEAD` equals `git rev-parse origin/main`. If local is behind, the release would ship stale code — stop and tell the user to `git pull --rebase` and rerun. If local is ahead with commits that aren't on the remote, those commits would be in the release; confirm with the user that's intended.
 - The plugin's main file has a valid `Version:` header (read it; record the current value).
 - The plugin has `.github/workflows/release.yml`. If not, the user needs `setup-plugin-autoupdate` first.
 - `gh` CLI is authenticated to the right GitHub owner (`gh auth status`). If not, ask the user to run `gh auth login` and rerun the skill.
 
-If anything is dirty or missing, report it and stop — do not bump version or commit against an unclean tree.
+If anything is dirty or missing, report it and stop — do not bump version or commit against an unclean tree, and do not release from a stale `main`.
 
 ### Step 2 — Determine the next version
 
@@ -38,23 +39,25 @@ Edit the `Version:` line in the plugin's main file (the plugin header, top comme
 
 Do not edit any other file. The plugin derives `*_VERSION` from this header via `get_file_data()`, so this single edit is the source of truth.
 
-### Step 4 — Tell the user to commit and push
+### Step 4 — Commit and push
 
-The Cowork bash sandbox cannot run git writes against the local repo (the mounted `.git/index.lock` denies the operation). Tell the user to run, in their own terminal:
+Run (or hand off to the user, depending on the environment):
 
 ```
 git commit -am "chore: release v<NEW_VERSION>" && git push
 ```
 
-Wait for them to confirm the commit has landed on `main` and the push succeeded. Do not proceed until they confirm — creating the GitHub release before the version-bump commit lands would build the *old* version's zip.
+If you have direct shell access on the user's machine (e.g. Claude Code on the local host), run it yourself. If you're in a sandboxed environment that can't write to the user's repo (e.g. Cowork, where the mounted `.git/index.lock` denies the operation), tell the user to run it in their own terminal and wait for confirmation.
 
-If the user prefers their own commit-and-push alias (e.g. `gsend`), that's fine — what matters is that the version-bump commit is on the remote `main` before Step 5.
+The version-bump commit must be on the remote `main` before Step 5 — creating the GitHub release before the commit lands would build the *old* version's zip.
+
+If the user prefers their own commit-and-push alias (e.g. `gsend`), that's fine — what matters is that the version-bump commit reaches the remote `main`.
 
 ### Step 5 — Create the GitHub release
 
-Two options. Use the one the user prefers; default to the `gh` CLI command.
+Two options. Default to the `gh` CLI command.
 
-**Option A — `gh` CLI (preferred for speed).** Give the user this exact command to run:
+**Option A — `gh` CLI (preferred for speed).** Run this command (or hand it off to the user if you can't execute it yourself):
 
 ```
 gh release create v<NEW_VERSION> \
@@ -64,13 +67,13 @@ gh release create v<NEW_VERSION> \
 
 If the user wants more elaborate notes (changelog, breaking changes section), suggest `--notes-file` pointing at a markdown file, or omit `--notes` so the GitHub web UI prompts for them.
 
-**Option B — Web UI.** Tell them to go to `https://github.com/<owner>/<repo>/releases/new`, pick the tag `v<NEW_VERSION>`, enter title and notes, and click Publish.
+**Option B — Web UI.** Direct the user to `https://github.com/<owner>/<repo>/releases/new`, pick the tag `v<NEW_VERSION>`, enter title and notes, and click Publish.
 
 Either way, the release publish event triggers the workflow.
 
 ### Step 6 — Verify the build
 
-After the user confirms the release is published, tell them to watch the Actions tab: `https://github.com/<owner>/<repo>/actions`. The "Build and Upload Plugin Asset" workflow should run within seconds and finish in under two minutes.
+Once the release is published, watch the Actions tab: `https://github.com/<owner>/<repo>/actions`. The "Build and Upload Plugin Asset" workflow should run within seconds and finish in under two minutes. If you can poll `gh run list --limit 1` directly, do; otherwise ask the user to confirm when it goes green.
 
 Success criteria:
 

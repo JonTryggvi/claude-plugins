@@ -14,11 +14,12 @@ Bump the theme's `style.css` version, commit and push, create the GitHub release
 ### Step 1 — Pre-flight
 
 - The repo is on `main` and the working tree is clean.
+- **Local `main` is in sync with `origin/main`.** Run `git fetch origin main --quiet`, then verify `git rev-parse HEAD` equals `git rev-parse origin/main`. If local is behind, the release would ship stale code — stop and tell the user to `git pull --rebase` and rerun. If local is ahead with commits that aren't on the remote, those commits would be in the release; confirm with the user that's intended.
 - The theme's `style.css` has a valid `Version:` header (read it; record the current value).
 - The theme has `.github/workflows/release-theme.yml`. If not, the user needs `setup-theme-autoupdate` first.
 - `gh` CLI is authenticated (`gh auth status`).
 
-If anything is dirty or missing, report it and stop.
+If anything is dirty or missing, report it and stop — and do not release from a stale `main`.
 
 ### Step 2 — Determine the next version
 
@@ -36,17 +37,19 @@ Edit the `Version:` line in `style.css` (the top comment block, in the theme met
 
 Do not edit `functions.php` or anything else. The theme has no `_VERSION` constant by default — `style.css` is the single source of truth that WP reads.
 
-### Step 4 — Tell the user to commit and push
+### Step 4 — Commit and push
 
-The Cowork bash sandbox cannot run git writes against the local repo. Tell the user to run, in their own terminal:
+Run (or hand off to the user, depending on the environment):
 
 ```
 git commit -am "chore: release v<NEW_VERSION>" && git push
 ```
 
-Wait for confirmation that the commit has landed on `main` and the push succeeded before proceeding.
+If you have direct shell access on the user's machine (e.g. Claude Code on the local host), run it yourself. If you're in a sandboxed environment that can't write to the user's repo (e.g. Cowork, where the mounted `.git/index.lock` denies the operation), tell the user to run it in their own terminal and wait for confirmation.
 
-If the user prefers their own commit-and-push alias (e.g. `gsend`), that's fine — what matters is that the version-bump commit is on the remote `main` before Step 5.
+The version-bump commit must be on the remote `main` before Step 5.
+
+If the user prefers their own commit-and-push alias (e.g. `gsend`), that's fine — what matters is that the version-bump commit reaches the remote `main`.
 
 ### Step 5 — Create the GitHub release
 
@@ -60,7 +63,7 @@ Or via the web UI: `https://github.com/<owner>/<repo>/releases/new`.
 
 ### Step 6 — Verify the build
 
-After the release is published, the user should watch `https://github.com/<owner>/<repo>/actions`. The "Build theme release asset" workflow should run within seconds and finish in under two minutes.
+Once the release is published, watch the Actions tab: `https://github.com/<owner>/<repo>/actions`. The "Build theme release asset" workflow should run within seconds and finish in under two minutes. If you can poll `gh run list --limit 1` directly, do; otherwise ask the user to confirm when it goes green.
 
 Success criteria:
 

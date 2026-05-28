@@ -23,7 +23,7 @@ Do not use this skill for:
 
 ### Step 1 — Identify the target project
 
-Determine the project root. Typically the current working directory if running in Cowork (the mounted folder) or the repo root reachable from the current Claude Code session.
+Determine the project root — the current working directory or the repo root reachable from the session.
 
 Confirm with the user: "Bootstrap a CLAUDE.md for `<project-path>`?" — get a yes before reading.
 
@@ -107,13 +107,13 @@ After approval:
 
 1. Back up nothing — there's no file to back up (refusal step caught the existing-file case).
 2. Write `<project-root>/CLAUDE.md` with the approved content.
-3. If the project is a git repo with a clean working tree, propose a commit: `chore: add CLAUDE.md`. Use `gsend` per the Avista convention (tell the user the command; the bash sandbox cannot run git). Do not auto-commit a dirty tree.
+3. If the project is a git repo with a clean working tree, propose a commit: `chore: add CLAUDE.md`. Run `git add CLAUDE.md && git commit -m "chore: add CLAUDE.md" && git push` (or hand off to the user if you can't write to the repo from the current environment — e.g. Cowork's sandboxed bash can't acquire git locks on a mounted Dropbox repo). Do not auto-commit a dirty tree.
 
 ### Step 8 — Suggest follow-ups
 
 After writing, tell the user:
 
-- The file is loaded automatically by Cowork and Claude Code on the next session in this project.
+- The file is loaded automatically on the next session in this project (both Claude Code and Cowork pick up project-local `CLAUDE.md` files).
 - If the project gains a major component (new strategy, new pipeline, new external integration), come back and either rerun this skill (it'll refuse, route to audit) or edit by hand.
 - `agent-md-audit` is the right tool for periodic pruning once the CLAUDE.md has been live for a while.
 
