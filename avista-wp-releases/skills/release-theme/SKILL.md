@@ -1,11 +1,13 @@
 ---
 name: release-theme
-description: Ship a new version of an Avista WordPress theme via GitHub Releases. Use when the user says "release the theme", "ship a theme release", "publish a new theme version", "tag and release the theme", "bump the theme version", or when ready to deploy theme updates through the PUC auto-updater pipeline. Do not use for plugins (release-plugin handles those) or for themes that don't have the auto-updater wired up (run setup-theme-autoupdate first).
+description: Ship a new version of an Avista WordPress theme via GitHub Releases — bump version, commit, push, tag and release, verify the build. Use when the user says "release the theme", "ship a theme release", "publish a new theme version", "tag and release the theme", "bump the theme version", "do a full circle", "full PR circle", "full release circle", or when ready to deploy theme updates through the PUC auto-updater pipeline. Do not use for plugins (release-plugin handles those) or for themes that don't have the auto-updater wired up (run setup-theme-autoupdate first).
 ---
 
 # Ship a new theme release
 
-Bump the theme's `style.css` version, commit through `gsend`, create the GitHub release, and verify the workflow attached the release asset. The theme must already have the auto-updater wired up — if it doesn't, route the user to `setup-theme-autoupdate` first.
+Bump the theme's `style.css` version, commit and push, create the GitHub release, and verify the workflow attached the release asset. The theme must already have the auto-updater wired up — if it doesn't, route the user to `setup-theme-autoupdate` first.
+
+"Do a full circle" / "full PR circle" / "full release circle" are nicknames for this end-to-end flow — they mean run the workflow below from pre-flight through verify, not just one of the steps.
 
 ## Workflow
 
@@ -34,13 +36,17 @@ Edit the `Version:` line in `style.css` (the top comment block, in the theme met
 
 Do not edit `functions.php` or anything else. The theme has no `_VERSION` constant by default — `style.css` is the single source of truth that WP reads.
 
-### Step 4 — Tell the user to commit
+### Step 4 — Tell the user to commit and push
+
+The Cowork bash sandbox cannot run git writes against the local repo. Tell the user to run, in their own terminal:
 
 ```
-gsend "chore: release v<NEW_VERSION>"
+git commit -am "chore: release v<NEW_VERSION>" && git push
 ```
 
-Wait for confirmation that the commit has landed on `main` before proceeding.
+Wait for confirmation that the commit has landed on `main` and the push succeeded before proceeding.
+
+If the user prefers their own commit-and-push alias (e.g. `gsend`), that's fine — what matters is that the version-bump commit is on the remote `main` before Step 5.
 
 ### Step 5 — Create the GitHub release
 
@@ -72,6 +78,8 @@ Common failures:
 Optional. On any site with the theme installed, go to **Appearance → Themes**. The theme card should show an "Update available" notice within ~12 hours (PUC's check cadence). To force an immediate check: append `?wppuc_update_check=1` to any admin URL while logged in as an admin.
 
 For a manual update via WP-CLI on a non-production install: `wp theme update <theme-slug>`.
+
+The release flow ends here. What the user does next — keep working on `main`, pull the new tag locally, branch off for the next piece of work — is up to them and outside this skill's scope.
 
 ## Rollback
 

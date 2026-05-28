@@ -1,11 +1,13 @@
 ---
 name: release-plugin
-description: Ship a new version of an Avista WordPress plugin via GitHub Releases. Use when the user says "release the plugin", "ship a release", "publish a new version", "tag and release", "cut a release", "bump the plugin version", or when ready to deploy plugin updates through the PUC auto-updater pipeline. Do not use for themes (release-theme handles those) or for plugins that don't have the auto-updater wired up (run setup-plugin-autoupdate first).
+description: Ship a new version of an Avista WordPress plugin via GitHub Releases — bump version, commit, push, tag and release, verify the build. Use when the user says "release the plugin", "ship a release", "publish a new version", "tag and release", "cut a release", "bump the plugin version", "do a full circle", "full PR circle", "full release circle", or when ready to deploy plugin updates through the PUC auto-updater pipeline. Do not use for themes (release-theme handles those) or for plugins that don't have the auto-updater wired up (run setup-plugin-autoupdate first).
 ---
 
 # Ship a new plugin release
 
-Bump the plugin header version, commit through `gsend`, create the GitHub release, and verify the workflow attached the release asset. The plugin must already have the auto-updater wired up — if it doesn't, route the user to `setup-plugin-autoupdate` first.
+Bump the plugin header version, commit and push, create the GitHub release, and verify the workflow attached the release asset. The plugin must already have the auto-updater wired up — if it doesn't, route the user to `setup-plugin-autoupdate` first.
+
+"Do a full circle" / "full PR circle" / "full release circle" are nicknames for this end-to-end flow — they mean run the workflow below from pre-flight through verify, not just one of the steps.
 
 ## Workflow
 
@@ -18,7 +20,7 @@ Run these checks before touching anything. Bail if any fail.
 - The plugin has `.github/workflows/release.yml`. If not, the user needs `setup-plugin-autoupdate` first.
 - `gh` CLI is authenticated to the right GitHub owner (`gh auth status`). If not, ask the user to run `gh auth login` and rerun the skill.
 
-If anything is dirty or missing, report it and stop — do not bump version or run `gsend` against an unclean tree.
+If anything is dirty or missing, report it and stop — do not bump version or commit against an unclean tree.
 
 ### Step 2 — Determine the next version
 
@@ -36,15 +38,17 @@ Edit the `Version:` line in the plugin's main file (the plugin header, top comme
 
 Do not edit any other file. The plugin derives `*_VERSION` from this header via `get_file_data()`, so this single edit is the source of truth.
 
-### Step 4 — Tell the user to commit
+### Step 4 — Tell the user to commit and push
 
-The Cowork bash sandbox cannot run git against the local repo. Tell the user to run, in their own terminal:
+The Cowork bash sandbox cannot run git writes against the local repo (the mounted `.git/index.lock` denies the operation). Tell the user to run, in their own terminal:
 
 ```
-gsend "chore: release v<NEW_VERSION>"
+git commit -am "chore: release v<NEW_VERSION>" && git push
 ```
 
-Wait for them to confirm the commit has landed on `main`. Do not proceed until they confirm — creating the GitHub release before the version-bump commit lands would build the *old* version's zip.
+Wait for them to confirm the commit has landed on `main` and the push succeeded. Do not proceed until they confirm — creating the GitHub release before the version-bump commit lands would build the *old* version's zip.
+
+If the user prefers their own commit-and-push alias (e.g. `gsend`), that's fine — what matters is that the version-bump commit is on the remote `main` before Step 5.
 
 ### Step 5 — Create the GitHub release
 
@@ -85,6 +89,8 @@ Optional but worth offering: tell the user how to verify the update actually rol
 
 - On any site with the plugin installed, go to **Plugins → Installed Plugins**. The plugin row should show an "Update available" link within ~12 hours of the release (PUC caches its update check; clicking "Check for updates" in the admin or appending `?wppuc_update_check=1` to the URL forces an immediate refresh).
 - If the user wants to test the update *now*, they can run `wp plugin update <plugin-slug>` via WP-CLI on a non-production install.
+
+The release flow ends here. What the user does next — keep working on `main`, pull the new tag locally, branch off for the next piece of work — is up to them and outside this skill's scope.
 
 ## Rollback
 

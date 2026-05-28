@@ -1,16 +1,18 @@
 ---
 name: release-skill-bundle
-description: "Ship a new version of an Avista skill-bundle plugin to the org marketplace. Bumps the plugin.json version, commits via gsend, then either triggers a GitHub-sync refresh in the admin UI (preferred when the marketplace is connected to the source repo) or packages a .zip for manual upload (fallback). Use when the user says release this plugin, release this skill bundle, ship this plugin, publish to the Avista marketplace, push this plugin to the org, cut a plugin release, or bump the plugin version. Targets plugins with .claude-plugin/plugin.json — do not use for WordPress plugins or themes (those have their own release skills in avista-wp-releases)."
+description: "Ship a new version of an Avista skill-bundle plugin to the org marketplace — bump plugin.json version, commit, push, and trigger marketplace sync. Bumps the plugin.json version, commits and pushes the bump, then either triggers a GitHub-sync refresh in the admin UI (preferred when the marketplace is connected to the source repo) or packages a .zip for manual upload (fallback). Use when the user says release this plugin, release this skill bundle, ship this plugin, publish to the Avista marketplace, push this plugin to the org, cut a plugin release, bump the plugin version, do a full circle, full PR circle, or full release circle. Targets plugins with .claude-plugin/plugin.json — do not use for WordPress plugins or themes (those have their own release skills in avista-wp-releases)."
 ---
 
 # Ship a skill-bundle plugin to the Avista org marketplace
 
 Bump the plugin's version, commit the source, and trigger the marketplace to pick up the new version. The Avista marketplace supports two ingestion paths:
 
-- **GitHub sync** — preferred when the marketplace is connected to the plugin's source repo. The skill bumps, commits via `gsend`, and tells the user to click "Update" on the marketplace in the admin UI. No zip-building, no file upload.
+- **GitHub sync** — preferred when the marketplace is connected to the plugin's source repo. The skill bumps, hands off a `git commit && git push` to the user, and tells them to click "Update" on the marketplace in the admin UI. No zip-building, no file upload.
 - **Manual .zip upload** — fallback for plugins whose marketplace isn't connected to a repo, for first-time publishes of a brand-new plugin, or when GitHub sync is unavailable. The skill packages a `.zip` and the user uploads it through the admin UI.
 
 For the Avista monorepo (`Avista/claude-plugins`), GitHub sync is the path. Default to it unless the user indicates otherwise.
+
+"Do a full circle" / "full PR circle" / "full release circle" are nicknames for this end-to-end flow — they mean run the workflow below from pre-flight through verify, not just one of the steps.
 
 ## When to invoke
 
@@ -59,15 +61,17 @@ Edit `plugin.json` and update the `version` field to the new value. Do not touch
 
 Re-validate the JSON after editing (avoid trailing-comma or other syntax mistakes from manual edits).
 
-### Step 5 — Commit the source
+### Step 5 — Commit and push the source
 
-If the source directory is a git repo, prepare a commit. Cowork's bash sandbox cannot run git against the user's repos — tell the user to run in their own terminal:
+If the source directory is a git repo, prepare a commit. Cowork's bash sandbox cannot run git writes against the user's repos (the mounted `.git/index.lock` denies the operation) — tell the user to run in their own terminal:
 
 ```
-gsend "chore: release v<NEW_VERSION>"
+git commit -am "chore(<plugin-name>): release v<NEW_VERSION>" && git push
 ```
 
 Wait for the user to confirm the commit landed and reached the remote before proceeding. For the GitHub-sync path, the marketplace can't see the new version until the commit is pushed to the connected repo.
+
+If the user prefers their own commit-and-push alias (e.g. `gsend`), that's fine — what matters is that the bump commit reaches the remote `main` before Step 6.
 
 If the source directory is not a git repo, skip the commit and fall through to the manual-upload path in Step 6 — GitHub sync requires a connected repo.
 
@@ -142,6 +146,8 @@ After the user confirms the marketplace has picked up the new version, suggest t
 - Or invoke one of the plugin's skills and check that any updated behavior is present.
 
 If the version still shows as the old one, the marketplace may be caching — give it a few minutes and re-check. If it persists, the new version may have failed validation server-side; check the admin UI for any error messages on the plugin that need addressing.
+
+The release flow ends here. What the user does next — keep working on `main`, branch off for the next piece of work, or step away — is up to them and outside this skill's scope.
 
 ## Notes
 

@@ -1,6 +1,6 @@
 {
   "name": "avista-memory-tools",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Maintenance tools for the agent-instructions and memory layers — bootstrap a project CLAUDE.md from its source, audit existing CLAUDE.md files for content that belongs elsewhere, lint the auto-memory store for staleness and drift, and ship updates to Avista skill-bundle plugins through the org marketplace.",
   "author": {
     "name": "Avista",
