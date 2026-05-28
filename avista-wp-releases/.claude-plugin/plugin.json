@@ -1,0 +1,11 @@
+{
+  "name": "avista-wp-releases",
+  "version": "0.1.0",
+  "description": "Avista's WordPress release pipeline for plugins and themes — scaffold GitHub Releases + plugin-update-checker (PUC v5p6) auto-updates, and ship new versions through that pipeline.",
+  "author": {
+    "name": "Avista",
+    "url": "https://avista.is"
+  },
+  "homepage": "https://avista.is",
+  "keywords": ["wordpress", "plugin", "theme", "auto-update", "github-releases", "puc", "avista"]
+}

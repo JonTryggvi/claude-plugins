@@ -1,0 +1,91 @@
+---
+name: release-theme
+description: Ship a new version of an Avista WordPress theme via GitHub Releases. Use when the user says "release the theme", "ship a theme release", "publish a new theme version", "tag and release the theme", "bump the theme version", or when ready to deploy theme updates through the PUC auto-updater pipeline. Do not use for plugins (release-plugin handles those) or for themes that don't have the auto-updater wired up (run setup-theme-autoupdate first).
+---
+
+# Ship a new theme release
+
+Bump the theme's `style.css` version, commit through `gsend`, create the GitHub release, and verify the workflow attached the release asset. The theme must already have the auto-updater wired up — if it doesn't, route the user to `setup-theme-autoupdate` first.
+
+## Workflow
+
+### Step 1 — Pre-flight
+
+- The repo is on `main` and the working tree is clean.
+- The theme's `style.css` has a valid `Version:` header (read it; record the current value).
+- The theme has `.github/workflows/release-theme.yml`. If not, the user needs `setup-theme-autoupdate` first.
+- `gh` CLI is authenticated (`gh auth status`).
+
+If anything is dirty or missing, report it and stop.
+
+### Step 2 — Determine the next version
+
+Look at the current version from `style.css` and the git log since the last release tag. Propose a semver bump:
+
+- **major** (X.0.0) — breaking template changes, removed page templates, dropped post-type support, anything that would break a site running this theme.
+- **minor** (x.Y.0) — new templates, new theme features, new hooks/filters.
+- **patch** (x.y.Z) — CSS tweaks, bug fixes, copy changes, asset updates.
+
+Show current version, proposed next version, and a one-line summary. Ask the user to confirm or override.
+
+### Step 3 — Bump the version
+
+Edit the `Version:` line in `style.css` (the top comment block, in the theme metadata). Use the bare version with no `v` prefix.
+
+Do not edit `functions.php` or anything else. The theme has no `_VERSION` constant by default — `style.css` is the single source of truth that WP reads.
+
+### Step 4 — Tell the user to commit
+
+```
+gsend "chore: release v<NEW_VERSION>"
+```
+
+Wait for confirmation that the commit has landed on `main` before proceeding.
+
+### Step 5 — Create the GitHub release
+
+```
+gh release create v<NEW_VERSION> \
+  --title "v<NEW_VERSION>" \
+  --notes "<one-line summary>"
+```
+
+Or via the web UI: `https://github.com/<owner>/<repo>/releases/new`.
+
+### Step 6 — Verify the build
+
+After the release is published, the user should watch `https://github.com/<owner>/<repo>/actions`. The "Build theme release asset" workflow should run within seconds and finish in under two minutes.
+
+Success criteria:
+
+- The workflow completes successfully.
+- The release page shows `<theme-slug>.zip` attached as an asset.
+
+Common failures:
+
+- `composer install` failed — investigate `composer.json`, fix on `main`, re-dispatch the workflow against the existing tag.
+- `softprops/action-gh-release@v2` failed with `fail_on_unmatched_files: true` — usually means the build step's zip command failed silently. Inspect the "Build zip" step logs.
+- `RELEASE_TAG` resolution fell through to an empty string — happens when the workflow was dispatched without a tag input from a context that doesn't carry `github.ref_name`. Re-dispatch with the tag input.
+
+### Step 7 — Confirm rollout
+
+Optional. On any site with the theme installed, go to **Appearance → Themes**. The theme card should show an "Update available" notice within ~12 hours (PUC's check cadence). To force an immediate check: append `?wppuc_update_check=1` to any admin URL while logged in as an admin.
+
+For a manual update via WP-CLI on a non-production install: `wp theme update <theme-slug>`.
+
+## Rollback
+
+Same shape as the plugin rollback story:
+
+1. Delete the GitHub release (not the tag).
+2. Immediately cut a patch release with the fix.
+3. Don't delete the tag unless you also want to retag from an older commit.
+
+If the release is broken *before any site has updated*, it's safe to delete both release and tag, fix, and recut the same version.
+
+## Notes
+
+- The `style.css` `Version:` line is the single source of truth. WP reads it for theme metadata; PUC reads it to detect updates.
+- Git tag format: `v<version>` (with `v`). `style.css` header: bare version. Do not unify — WP's header format does not accept `v` prefixes.
+- Themes use `screenshot.png` for the admin UI image. If you change it, the new screenshot only shows up after the user *updates* the theme (PUC includes it in the release asset).
+- Child themes do *not* need their own release pipeline — they inherit the parent theme's update mechanism for any code they reference. They do need their own bump-and-release if they have independent versioning, but the autoupdater wiring lives on the parent.

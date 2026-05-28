@@ -1,0 +1,77 @@
+name: Build and Upload Plugin Asset
+
+# Triggered on release publish; workflow_dispatch is provided as an
+# escape hatch for re-running a build against a specific tag without
+# having to re-publish the release.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to build (e.g. 1.4.18). Defaults to the ref the workflow was dispatched against.'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build & Deploy
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag || github.ref_name }}
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4.2.2
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+
+      - name: Debug tag context
+        run: |
+          echo "github.ref: ${{ github.ref }}"
+          echo "github.ref_name: ${{ github.ref_name }}"
+          echo "event.release.tag_name: ${{ github.event.release.tag_name }}"
+          echo "RELEASE_TAG: ${{ env.RELEASE_TAG }}"
+          if [ -z "${{ env.RELEASE_TAG }}" ]; then
+            echo "ERROR: RELEASE_TAG is empty. Workflow must run from a release context."
+            exit 1
+          fi
+
+      - name: Setup PHP & Composer
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          tools: composer
+
+      - name: Install Composer Dependencies
+        run: composer install --no-dev --optimize-autoloader --prefer-dist --no-interaction --no-progress
+
+      - name: Prepare Plugin Artifact
+        run: |
+          mkdir -p build/__BUILD_DIR_NAME__
+
+          rsync -av --progress ./ build/__BUILD_DIR_NAME__ \
+            --exclude '.git' \
+            --exclude '.github' \
+            --exclude '.vscode' \
+            --exclude '.claude' \
+            --exclude 'build' \
+            --exclude '.gitignore' \
+            --exclude 'CLAUDE.md' \
+            --exclude 'composer.json' \
+            --exclude 'composer.lock' \
+            --exclude 'phpunit.xml' \
+            --exclude 'tests'
+
+          cd build
+          zip -r ../__RELEASE_ZIP_BASE__.zip __BUILD_DIR_NAME__
+
+      - name: Upload Zip to Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${RELEASE_TAG}" __RELEASE_ZIP_BASE__.zip --clobber

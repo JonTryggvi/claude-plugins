@@ -1,0 +1,64 @@
+name: Build theme release asset
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to build (e.g. 1.2.0). Defaults to the ref the workflow was dispatched against.'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag || github.ref_name }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.2"
+          tools: composer:v2
+
+      - name: Install Composer deps
+        run: composer install --no-dev --prefer-dist --optimize-autoloader
+
+      - name: Build zip
+        run: |
+          set -euo pipefail
+          SLUG="__THEME_SLUG__"
+          ZIP_PATH="$GITHUB_WORKSPACE/$SLUG.zip"
+          rm -rf dist && mkdir -p "dist/$SLUG"
+          rsync -a \
+            --exclude ".git/" \
+            --exclude ".github/" \
+            --exclude ".claude/" \
+            --exclude ".vscode/" \
+            --exclude "dist/" \
+            --exclude "node_modules/" \
+            --exclude "references/" \
+            --exclude "CLAUDE.md" \
+            --exclude "composer.json" \
+            --exclude "composer.lock" \
+            --exclude "*.log" \
+            --exclude "*.tmp" \
+            --exclude ".DS_Store" \
+            ./ "dist/$SLUG/"
+          cd dist && zip -r "$ZIP_PATH" "$SLUG"
+
+      - name: Upload asset to release
+        uses: softprops/action-gh-release@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          files: "__THEME_SLUG__.zip"
+          fail_on_unmatched_files: true

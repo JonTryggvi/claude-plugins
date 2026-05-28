@@ -1,0 +1,11 @@
+{
+  "name": "avista-memory-tools",
+  "version": "0.2.0",
+  "description": "Maintenance tools for the Claude knowledge layer — audit CLAUDE.md files for content that belongs elsewhere, lint the auto-memory store for staleness and drift, and ship updates to Avista Claude plugins through the org marketplace.",
+  "author": {
+    "name": "Avista",
+    "url": "https://avista.is"
+  },
+  "homepage": "https://avista.is",
+  "keywords": ["claude", "memory", "audit", "knowledge-base", "plugin-release", "avista"]
+}

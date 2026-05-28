@@ -1,0 +1,33 @@
+# Build artifacts — regenerated on release
+*.plugin
+**/dist/
+**/build/
+
+# OS cruft
+.DS_Store
+**/.DS_Store
+Thumbs.db
+
+# Editor scratch
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Node — if any plugin ever ships with a build pipeline
+node_modules/
+**/node_modules/
+
+# Python — if any plugin ever ships scripts/ with deps
+__pycache__/
+**/__pycache__/
+*.pyc
+.venv/
+**/.venv/
+
+# Secrets — never commit
+.env
+.env.local
+**/.env
+**/.env.local
