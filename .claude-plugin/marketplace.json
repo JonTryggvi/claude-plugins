@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "avista",
+  "owner": {
+    "name": "Avista",
+    "url": "https://avista.is"
+  },
+  "plugins": [
+    {
+      "name": "avista-memory-tools",
+      "source": "./avista-memory-tools",
+      "description": "Maintenance tools for the agent-instructions and memory layers — bootstrap a project CLAUDE.md from its source, audit existing CLAUDE.md files for content that belongs elsewhere, lint the auto-memory store for staleness and drift, and ship updates to Avista skill-bundle plugins through the org marketplace."
+    },
+    {
+      "name": "avista-wp-releases",
+      "source": "./avista-wp-releases",
+      "description": "Avista's WordPress release pipeline for plugins and themes — scaffold GitHub Releases + plugin-update-checker (PUC v5p6) auto-updates, and ship new versions through that pipeline."
+    }
+  ]
+}
