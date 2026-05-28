@@ -7,7 +7,7 @@ Source code for the Claude plugins Avista distributes through its organization m
 | Plugin | Purpose |
 |---|---|
 | [`avista-wp-releases/`](avista-wp-releases/) | Auto-updater scaffolding and release workflow for Avista WordPress plugins and themes. Four skills covering both surfaces. |
-| [`avista-memory-tools/`](avista-memory-tools/) | Maintenance tools for the agent-instructions and memory layers — CLAUDE.md audit, memory store linter, skill-bundle release workflow. |
+| [`avista-memory-tools/`](avista-memory-tools/) | Maintenance tools for the agent-instructions and memory layers — CLAUDE.md bootstrap, CLAUDE.md audit, memory store linter, skill-bundle release workflow. |
 
 ## Working in this repo
 
