@@ -1,9 +1,9 @@
 ---
-name: release-claude-plugin
-description: "Ship a new version of an Avista Claude plugin to the org marketplace. Bumps the plugin.json version, commits the source via gsend, repackages the plugin as a .zip with the correct wrapper-directory structure, and walks through uploading it to the Avista organization marketplace via the Anthropic admin UI. Use when the user says release this plugin, ship this Claude plugin, publish to the Avista marketplace, push this plugin to the org, cut a plugin release, bump the plugin version, or when iterating on a plugin and ready to distribute the next version. Targets Claude plugins (those with .claude-plugin/plugin.json) — do not use for WordPress plugins or themes."
+name: release-skill-bundle
+description: "Ship a new version of an Avista skill-bundle plugin to the org marketplace. Bumps the plugin.json version, commits the source via gsend, repackages the plugin as a .zip with the correct wrapper-directory structure, and walks through uploading it to the Avista organization marketplace via the Anthropic admin UI. Use when the user says release this plugin, release this skill bundle, ship this plugin, publish to the Avista marketplace, push this plugin to the org, cut a plugin release, or bump the plugin version. Targets plugins with .claude-plugin/plugin.json — do not use for WordPress plugins or themes (those have their own release skills in avista-wp-releases)."
 ---
 
-# Ship a Claude plugin to the Avista org marketplace
+# Ship a skill-bundle plugin to the Avista org marketplace
 
 Bump the plugin's version, commit the source, repackage as a `.zip` (with a top-level wrapper directory matching the plugin name), and walk the user through the upload UI. The skill does the mechanical work; the actual upload step is a browser action the user performs.
 
@@ -32,7 +32,8 @@ Read `plugin.json` to record the current `name` and `version`. The `name` field 
 ### Step 2 — Pre-flight checks
 
 - Verify the `.claude-plugin/plugin.json` is valid JSON with a `name` and `version` field.
-- For each `skills/<skill-name>/SKILL.md` in the plugin, verify the file exists, has YAML frontmatter, and the `name:` in frontmatter matches the directory name. (Cowork's installer is strict about this — a name mismatch is the most common silent rejection.)
+- For each `skills/<skill-name>/SKILL.md` in the plugin, verify the file exists, has YAML frontmatter, and the `name:` in frontmatter matches the directory name. A mismatch is the most common silent rejection.
+- **Reserved-word check.** Verify that no skill's `name:` field contains the substring `claude` (case-insensitive). The Avista marketplace rejects skill names containing this reserved word with a "Plugin validation failed" error that *does* report the actual rule (unlike many other validation failures). Other reserved words may exist; if any future upload fails with a similar reserved-word message, add the new word to this check. If the check fails, stop and tell the user which skills need renaming and suggest alternatives (e.g. `release-claude-plugin` → `release-skill-bundle`, `claude-md-audit` → `agent-md-audit`).
 - If the source directory is a git repo, verify the working tree is clean (no uncommitted changes outside the version bump you're about to make). If dirty, stop and report the dirty files. Do not bump version against an unclean tree.
 - If `gh` CLI is available, optionally verify the user is authenticated (`gh auth status`) — only matters if the user wants to push the source repo too.
 

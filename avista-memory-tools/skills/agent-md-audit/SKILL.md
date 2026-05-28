@@ -1,6 +1,6 @@
 ---
-name: claude-md-audit
-description: "Audit a CLAUDE.md file and classify each section as either a universal rule to keep, a workflow that should become a skill, personal context that belongs in memory, a duplicate to replace with a one-line pointer, or content to delete. Proposes a pruned version with reasoning per section, waits for approval, applies the prune with a timestamped backup. Use when the user says audit my CLAUDE.md, review CLAUDE.md, what should I prune from CLAUDE.md, is anything in here a skill, clean up CLAUDE.md, is CLAUDE.md bloated, or after migrating workflow content into a new plugin and wanting to find what is now redundant. Works on the global user CLAUDE.md or any project-local CLAUDE.md."
+name: agent-md-audit
+description: "Audit a CLAUDE.md or AGENTS.md file and classify each section as either a universal rule to keep, a workflow that should become a skill, personal context that belongs in memory, a duplicate to replace with a one-line pointer, or content to delete. Proposes a pruned version with reasoning per section, waits for approval, applies the prune with a timestamped backup. Use when the user says audit my CLAUDE.md, audit my AGENTS.md, review CLAUDE.md, what should I prune from CLAUDE.md, is anything in here a skill, clean up CLAUDE.md, is CLAUDE.md bloated, or after migrating workflow content into a new plugin and wanting to find what is now redundant. Works on the global ~/.claude/CLAUDE.md, any project-local CLAUDE.md, or any agent-instructions file with the same shape."
 ---
 
 # Audit a CLAUDE.md for content that belongs elsewhere
