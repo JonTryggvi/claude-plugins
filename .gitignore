@@ -1,5 +1,6 @@
 # Build artifacts — regenerated on release
 *.plugin
+*.zip
 **/dist/
 **/build/
 
