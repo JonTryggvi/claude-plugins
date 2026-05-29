@@ -15,6 +15,16 @@
       "name": "avista-wp-releases",
       "source": "./avista-wp-releases",
       "description": "Avista's WordPress release pipeline for plugins and themes — scaffold GitHub Releases + plugin-update-checker (PUC v5p6) auto-updates, and ship new versions through that pipeline."
+    },
+    {
+      "name": "avista-wp-prod-ops",
+      "source": "./avista-wp-prod-ops",
+      "description": "Operate safely on Avista WordPress sites whose code lives on production and is reached over SSH — inspect-first triage, mandatory git backup of DB-stored code, and WP Code Box 2 snippet install/update without the admin UI."
+    },
+    {
+      "name": "avista-wpgb-trp-fix",
+      "source": "./avista-wpgb-trp-fix",
+      "description": "Diagnose and fix the recurring bug where WP Grid Builder facets and pagination return the default language on TranslatePress sites — ships a transport-aware filter pair (query-var AJAX + REST insurance) that translates WPGB responses for the referer's language."
     }
   ]
 }

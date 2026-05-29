@@ -7,6 +7,8 @@ Source code for the Claude plugins Avista distributes through its organization m
 | Plugin | Purpose |
 |---|---|
 | [`avista-wp-releases/`](avista-wp-releases/) | Auto-updater scaffolding and release workflow for Avista WordPress plugins and themes. Four skills covering both surfaces. |
+| [`avista-wp-prod-ops/`](avista-wp-prod-ops/) | Operate safely on Avista WordPress sites whose code lives on production over SSH — inspect-first triage, mandatory git backup of DB-stored code, and WP Code Box 2 snippet install/update without the admin UI. |
+| [`avista-wpgb-trp-fix/`](avista-wpgb-trp-fix/) | Fix the recurring bug where WP Grid Builder facets and pagination return the default language on TranslatePress sites. Ships a transport-aware filter pair plus a ready-to-deploy PHP snippet. |
 | [`avista-memory-tools/`](avista-memory-tools/) | Maintenance tools for the agent-instructions and memory layers — CLAUDE.md bootstrap, CLAUDE.md audit, memory store linter, skill-bundle release workflow. |
 
 ## Working in this repo
