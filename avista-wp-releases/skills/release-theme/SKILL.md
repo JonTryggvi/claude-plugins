@@ -78,9 +78,9 @@ Common failures:
 
 ### Step 7 — Confirm rollout
 
-Optional. On any site with the theme installed, go to **Appearance → Themes**. The theme card should show an "Update available" notice within ~12 hours (PUC's check cadence). To force an immediate check: append `?wppuc_update_check=1` to any admin URL while logged in as an admin.
+Optional. On any site with the theme installed, go to **Appearance → Themes**. The theme card should show an "Update available" notice within ~12 hours (PUC throttles its check to ~12h). To force an immediate check, use **Dashboard → Updates → "Check again"** (or click PUC's update-check link if present). Note: the old `?wppuc_update_check=1` URL trick does **not** work in PUC v5p6 — its trigger is `?puc_check_for_updates=1&puc_slug=<slug>` guarded by a `check_admin_referer` nonce, so a hand-typed URL fails the nonce check.
 
-For a manual update via WP-CLI on a non-production install: `wp theme update <theme-directory>`. Use the directory name, not the human-readable theme name — see Step 8 for related case-sensitivity notes.
+For a manual update via WP-CLI on a non-production install: `wp theme update <theme-directory>`. Use the directory name, not the human-readable theme name — see Step 8 for related case-sensitivity notes. If it reports "already updated" right after a release, that's PUC's CLI throttle: force a fresh check with `wp eval '...$checker->checkForUpdates();'` (the forcing method, vs. the throttled `maybeCheckForUpdates()` the CLI hook calls), then re-run the update.
 
 ### Step 8 — Deploy to production (optional)
 

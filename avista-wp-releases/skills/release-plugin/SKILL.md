@@ -90,8 +90,8 @@ If the workflow fails or no asset is attached, the release is not actually shipp
 
 Optional but worth offering: tell the user how to verify the update actually rolls out.
 
-- On any site with the plugin installed, go to **Plugins → Installed Plugins**. The plugin row should show an "Update available" link within ~12 hours of the release (PUC caches its update check; clicking "Check for updates" in the admin or appending `?wppuc_update_check=1` to the URL forces an immediate refresh).
-- If the user wants to test the update *now*, they can run `wp plugin update <plugin-directory>/<plugin-main-file>` via WP-CLI on a non-production install. **Always use the full plugin file path, not the bare slug** — see Step 8 for why.
+- On any site with the plugin installed, go to **Plugins → Installed Plugins**. The plugin row should show an "Update available" link within ~12 hours of the release (PUC throttles its check to ~12h). To force an immediate check, click the **"Check for updates" link PUC adds under the plugin row** — it carries the nonce PUC requires. Don't tell users to hand-type a URL: PUC v5p6's trigger is `?puc_check_for_updates=1&puc_slug=<slug>` *plus* a `check_admin_referer` nonce (not the old `?wppuc_update_check=1`), so a typed URL just fails the nonce check.
+- If the user wants to test the update *now*, they can run `wp plugin update <plugin-directory>/<plugin-main-file>` via WP-CLI on a non-production install. **Always use the full plugin file path, not the bare slug** — see Step 8 for why. If it reports "already updated" right after a release, that's PUC's CLI throttle — see Step 8 for how to force a fresh check.
 
 ### Step 8 — Deploy to production (optional)
 
@@ -127,6 +127,14 @@ ssh jontryggvi_ssh@regluvordur.tempurl.host "cd ~/public_html && wp plugin updat
 ```
 
 **Why the full path is mandatory.** WP-CLI looks up plugins by case-sensitive comparison. If the plugin's directory is `avista-regluvordur` (lowercase) but the plugin defines a slug constant like `REGLUVORDUR_SLUG = 'Avista-Regluvordur'` (capitalized), `wp plugin update avista-regluvordur` fails with "Plugin not found" — even though the plugin is installed. The full `directory/main-file.php` form bypasses slug lookup entirely and matches by file path. Use it always; works whether or not there's a case mismatch, no downside.
+
+**If `wp plugin update` reports "Plugin already updated" right after you published a newer release**, that's PUC's WP-CLI throttle — not a missing asset. PUC v5p6 *does* check on `wp plugin update/list/status` (via its `WpCliCheckTrigger`), but only refetches from GitHub if its ~12h interval has elapsed since the last check; otherwise it returns instantly with stale data. Force a fresh check, then re-run the update:
+
+```
+ssh <ssh-target> "cd <wp-root> && wp eval '\$c = YahnisElsts\\\\PluginUpdateChecker\\\\v5p6\\\\PucFactory::buildUpdateChecker(\"<repo-url>\", WP_PLUGIN_DIR.\"/<dir>/<main-file>\", \"<slug>\"); if (defined(\"GITHUB_TOKEN\")) \$c->setAuthentication(GITHUB_TOKEN); \$v=\$c->getVcsApi(); if (\$v) \$v->enableReleaseAssets(); \$c->checkForUpdates();' && wp plugin update <dir>/<main-file>"
+```
+
+`checkForUpdates()` is the documented force method (vs. the throttled `maybeCheckForUpdates()` the CLI hook calls). The `setAuthentication(GITHUB_TOKEN)` + `enableReleaseAssets()` calls matter for private repos / `REQUIRE_RELEASE_ASSETS`. Nested-quote escaping over SSH is finicky — if the `wp eval` one-liner won't parse, drop the PHP into a temp file with a leading `<?php` and run `wp eval-file /tmp/check.php` instead. Do **not** reach for `wp plugin install <zip> --force` as a workaround unless the zip's top folder matches the install dir (older releases unpack a stray copy — see `setup-plugin-autoupdate`).
 
 **4. Verify the update.**
 

@@ -49,7 +49,7 @@ From the plugin's existing header, slug, and remote, derive each value below. Sh
 | `__PLUGIN_SLUG__` | WP slug used by `plugin_basename()` (often matches `__GH_REPO__`) | `Avista-MyPlugin` |
 | `__PLUGIN_TITLE__` | Human-readable plugin name (from the plugin header) | `Avista MyPlugin` |
 | `__RELEASE_ZIP_BASE__` | Basename of the release asset, no `.zip` | `avista-myplugin-release` |
-| `__BUILD_DIR_NAME__` | Folder name inside the release zip (matches the WP plugin directory name) | `myplugin` |
+| `__BUILD_DIR_NAME__` | Top-level folder inside the release zip — must equal the folder the plugin is **installed** under (`dirname(plugin_basename())`), which is NOT necessarily your dev checkout's folder | `avista-myplugin` |
 
 Heuristics:
 
@@ -57,7 +57,7 @@ Heuristics:
 - `__PLUGIN_CONST__` is `__PLUGIN_PASCAL__` uppercased with underscores preserved. If the plugin already defines constants with another prefix, use that prefix instead.
 - `__GH_OWNER__` and `__GH_REPO__` come from the git remote URL.
 - `__RELEASE_ZIP_BASE__` should be lowercase-kebab and include `-release` so it's distinguishable from any other zips the user might attach manually. `avista-<plugin>-release` is the established convention.
-- `__BUILD_DIR_NAME__` defaults to the plugin's existing folder name (so the zip extracts to the correct WP plugins folder).
+- `__BUILD_DIR_NAME__` is the folder the plugin lives in **when installed** (e.g. `avista-myplugin`) — this is what determines where the zip unpacks. It is NOT always your local checkout's folder name: a repo cloned as `myplugin/` may be installed on production as `avista-myplugin/`. Get the real value from an installed site — the directory portion of the `active_plugins` entry, i.e. `dirname(plugin_basename(__FILE__))` — and make it match `__RELEASE_ZIP_BASE__` minus the `-release` suffix. **Why it matters:** if it mismatches the install folder, PUC's *admin* update still self-corrects (`UpdateChecker::fixDirectoryName` renames the extracted dir to the live folder during an update), but `wp plugin install <zip> --force` honours the zip's folder name and will unpack a *second, stray* copy under the wrong name instead of upgrading in place.
 
 ### Step 3 — Confirm
 
