@@ -31,7 +31,12 @@ final class __THEME_PASCAL___Theme_UpdateChecker {
         $checker = PucFactory::buildUpdateChecker(
             self::REPO_URL,
             get_stylesheet_directory() . '/functions.php',
-            self::THEME_SLUG
+            self::THEME_SLUG,
+            1 // checkPeriod (hours). PUC's default is 12 — too slow when you
+              // cut several releases in a day, since a site only notices a
+              // new release on its next poll. Hourly is well within the
+              // GitHub API rate limit with a token. Force an immediate
+              // pickup with the "Check for updates" link or a direct install.
         );
 
         $token = defined( 'GITHUB_TOKEN' ) ? GITHUB_TOKEN : '';
