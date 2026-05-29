@@ -91,7 +91,60 @@ If the workflow fails or no asset is attached, the release is not actually shipp
 Optional but worth offering: tell the user how to verify the update actually rolls out.
 
 - On any site with the plugin installed, go to **Plugins → Installed Plugins**. The plugin row should show an "Update available" link within ~12 hours of the release (PUC caches its update check; clicking "Check for updates" in the admin or appending `?wppuc_update_check=1` to the URL forces an immediate refresh).
-- If the user wants to test the update *now*, they can run `wp plugin update <plugin-slug>` via WP-CLI on a non-production install.
+- If the user wants to test the update *now*, they can run `wp plugin update <plugin-directory>/<plugin-main-file>` via WP-CLI on a non-production install. **Always use the full plugin file path, not the bare slug** — see Step 8 for why.
+
+### Step 8 — Deploy to production (optional)
+
+The release is built and PUC will pick it up on its next ~12-hour check. If the user wants to push the update to a production install *now*, this step walks through it — but only if production access is already saved in memory. **Do not invent an SSH connection or prompt the user to type one out** — the point of this step is to use connection details the user has already trusted to memory.
+
+**1. Check memory for a production SSH connection.**
+
+Look in the reachable memory stores for a file describing production access. Common locations and patterns:
+
+- Project-local memory directories: `<project>/memory/*.md`, `<project>/.claude/memory/*.md`, `<project>/docs/*.md`. Look for filenames containing `ssh`, `production`, `prod`, `live`, `deploy`, or section headings of the same names.
+- Cowork's auto-memory store (`~/Library/Application Support/Claude/local-agent-mode-sessions/<...>/spaces/<id>/memory/`) — same name patterns.
+
+If nothing matches, **skip this step silently**. Optionally tell the user once at the end: *"No production SSH found in memory. To enable one-step production deploys in future releases, save your SSH connection in project memory (`<project>/memory/production_ssh.md`)."*
+
+**2. Confirm with the user before doing anything.**
+
+If memory has matching content, surface it and ask:
+
+> Found production SSH in `<memory-file-path>`. The release v<NEW_VERSION> is now live on GitHub. Want me to push the update to production now?
+
+Wait for an explicit yes. A passive "sure" / "go ahead" counts; silence or "later" means skip.
+
+**3. Run the WP-CLI update over SSH — use the FULL plugin file path, not the bare slug.**
+
+```
+ssh <ssh-target-from-memory> "cd <wp-root-from-memory-or-default> && wp plugin update <plugin-directory>/<plugin-main-file>"
+```
+
+Concrete example for the `avista-regluvordur` plugin (directory `avista-regluvordur`, main file `regluvordur.php`):
+
+```
+ssh jontryggvi_ssh@regluvordur.tempurl.host "cd ~/public_html && wp plugin update avista-regluvordur/regluvordur.php"
+```
+
+**Why the full path is mandatory.** WP-CLI looks up plugins by case-sensitive comparison. If the plugin's directory is `avista-regluvordur` (lowercase) but the plugin defines a slug constant like `REGLUVORDUR_SLUG = 'Avista-Regluvordur'` (capitalized), `wp plugin update avista-regluvordur` fails with "Plugin not found" — even though the plugin is installed. The full `directory/main-file.php` form bypasses slug lookup entirely and matches by file path. Use it always; works whether or not there's a case mismatch, no downside.
+
+**4. Verify the update.**
+
+```
+ssh <ssh-target> "wp plugin list --status=active --name=<plugin-directory> --field=version"
+```
+
+The output should show the new version. If maintenance mode was toggled during the update, confirm it's off:
+
+```
+ssh <ssh-target> "wp maintenance-mode is-active"
+```
+
+Should return "Maintenance mode is not active."
+
+**5. Report.**
+
+Tell the user the new version is live on production, the verify command's output, and the URL of the site if known. If anything in steps 3–4 failed, surface the error verbatim and stop — don't try to debug or rollback automatically.
 
 The release flow ends here. What the user does next — keep working on `main`, pull the new tag locally, branch off for the next piece of work — is up to them and outside this skill's scope.
 

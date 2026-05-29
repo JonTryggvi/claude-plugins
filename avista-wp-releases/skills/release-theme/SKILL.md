@@ -80,7 +80,48 @@ Common failures:
 
 Optional. On any site with the theme installed, go to **Appearance → Themes**. The theme card should show an "Update available" notice within ~12 hours (PUC's check cadence). To force an immediate check: append `?wppuc_update_check=1` to any admin URL while logged in as an admin.
 
-For a manual update via WP-CLI on a non-production install: `wp theme update <theme-slug>`.
+For a manual update via WP-CLI on a non-production install: `wp theme update <theme-directory>`. Use the directory name, not the human-readable theme name — see Step 8 for related case-sensitivity notes.
+
+### Step 8 — Deploy to production (optional)
+
+The release is built and PUC will pick it up on its next ~12-hour check. If the user wants to push the update to a production install *now*, this step walks through it — but only if production access is already saved in memory. **Do not invent an SSH connection or prompt the user to type one out** — the point of this step is to use connection details the user has already trusted to memory.
+
+**1. Check memory for a production SSH connection.**
+
+Look in the reachable memory stores for a file describing production access. Common locations and patterns:
+
+- Project-local memory directories: `<project>/memory/*.md`, `<project>/.claude/memory/*.md`, `<project>/docs/*.md`. Look for filenames containing `ssh`, `production`, `prod`, `live`, `deploy`, or section headings of the same names.
+- Cowork's auto-memory store (`~/Library/Application Support/Claude/local-agent-mode-sessions/<...>/spaces/<id>/memory/`) — same name patterns.
+
+If nothing matches, **skip this step silently**. Optionally tell the user once at the end: *"No production SSH found in memory. To enable one-step production deploys in future releases, save your SSH connection in project memory (`<project>/memory/production_ssh.md`)."*
+
+**2. Confirm with the user before doing anything.**
+
+If memory has matching content, surface it and ask:
+
+> Found production SSH in `<memory-file-path>`. The release v<NEW_VERSION> is now live on GitHub. Want me to push the update to production now?
+
+Wait for an explicit yes.
+
+**3. Run the WP-CLI update over SSH.**
+
+```
+ssh <ssh-target-from-memory> "cd <wp-root-from-memory-or-default> && wp theme update <theme-directory>"
+```
+
+Use the theme's **directory name**, not the human-readable theme name. Themes don't usually define a `_SLUG` constant the way plugins do, so the bare directory name typically works — but it must match the on-disk directory exactly (case-sensitive). If the user maintains a sibling [[wp-cli-plugin-slug-case-trap]] memory or notices anomalies, fall back to verifying with `wp theme list` first.
+
+**4. Verify the update.**
+
+```
+ssh <ssh-target> "wp theme list --status=active --name=<theme-directory> --field=version"
+```
+
+Should show the new version.
+
+**5. Report.**
+
+Tell the user the new version is live on production, the verify command's output, and the URL of the site if known. If anything in steps 3–4 failed, surface the error verbatim and stop — don't try to debug or rollback automatically.
 
 The release flow ends here. What the user does next — keep working on `main`, pull the new tag locally, branch off for the next piece of work — is up to them and outside this skill's scope.
 
