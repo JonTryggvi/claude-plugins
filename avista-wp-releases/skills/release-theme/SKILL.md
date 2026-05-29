@@ -80,7 +80,7 @@ Common failures:
 
 Optional. On any site with the theme installed, go to **Appearance → Themes**. The theme card should show an "Update available" notice within ~12 hours (PUC throttles its check to ~12h). To force an immediate check, use **Dashboard → Updates → "Check again"** (or click PUC's update-check link if present). Note: the old `?wppuc_update_check=1` URL trick does **not** work in PUC v5p6 — its trigger is `?puc_check_for_updates=1&puc_slug=<slug>` guarded by a `check_admin_referer` nonce, so a hand-typed URL fails the nonce check.
 
-For a manual update via WP-CLI on a non-production install: `wp theme update <theme-directory>`. Use the directory name, not the human-readable theme name — see Step 8 for related case-sensitivity notes. If it reports "already updated" right after a release, that's PUC's CLI throttle: force a fresh check with `wp eval '...$checker->checkForUpdates();'` (the forcing method, vs. the throttled `maybeCheckForUpdates()` the CLI hook calls), then re-run the update.
+To apply the update via WP-CLI, the reliable path is force-installing the release zip — `gh release download … && wp theme install <zip> --force` (see Step 8). Do **not** rely on `wp theme update <theme-directory>`: PUC's CLI check (`WpCliCheckTrigger` hooks `theme update/list/status` → throttled `maybeCheckForUpdates()`) usually reports "already updated", and a forced `checkForUpdates()` in a separate process doesn't carry over to `wp theme update` — the same limitation proven for the plugin variant. The admin "Update" button (Appearance → Themes) is the dependable non-force path.
 
 ### Step 8 — Deploy to production (optional)
 
@@ -103,13 +103,17 @@ If memory has matching content, surface it and ask:
 
 Wait for an explicit yes.
 
-**3. Run the WP-CLI update over SSH.**
+**3. Deploy by force-installing the release zip — the reliable CLI path.**
+
+Do **not** use `wp theme update <theme-directory>` for a GitHub-PUC theme from CLI — PUC's CLI check is throttled and a forced check doesn't carry over to it (same limitation proven for the plugin variant). Download the release asset and force-install it. `gh` must be authed locally to read the (often private) asset.
 
 ```
-ssh <ssh-target-from-memory> "cd <wp-root-from-memory-or-default> && wp theme update <theme-directory>"
+gh release download v<NEW_VERSION> -R <owner>/<repo> -p '*.zip' -O /tmp/theme.zip
+scp /tmp/theme.zip <ssh-target>:/tmp/theme.zip
+ssh <ssh-target> "cd <wp-root> && wp maintenance-mode activate && wp theme install /tmp/theme.zip --force && wp maintenance-mode deactivate && wp theme get <theme-directory> --field=version && rm -f /tmp/theme.zip"
 ```
 
-Use the theme's **directory name**, not the human-readable theme name. Themes don't usually define a `_SLUG` constant the way plugins do, so the bare directory name typically works — but it must match the on-disk directory exactly (case-sensitive). If the user maintains a sibling [[wp-cli-plugin-slug-case-trap]] memory or notices anomalies, fall back to verifying with `wp theme list` first.
+`--force` overwrites the theme directory in place; the active theme stays active and the version updates. Maintenance mode ensures no request hits half-swapped files. The theme zip's top folder is the theme slug (which equals the install directory), so `--force` lands in place — but if a site installed the theme under a different directory name, confirm with `wp theme list` first, since `--force` keys off the zip's folder name.
 
 **4. Verify the update.**
 
