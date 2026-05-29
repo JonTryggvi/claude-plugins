@@ -1,6 +1,6 @@
 ---
 name: release-skill-bundle
-description: "Ship a new version of an Avista skill-bundle plugin to the org marketplace — bump plugin.json version, commit, push, and trigger marketplace sync. Bumps the plugin.json version, commits and pushes the bump, then either triggers a GitHub-sync refresh in the admin UI (preferred when the marketplace is connected to the source repo) or packages a .zip for manual upload (fallback). Use when the user says release this plugin, release this skill bundle, ship this plugin, publish to the Avista marketplace, push this plugin to the org, cut a plugin release, bump the plugin version, do a full circle, full PR circle, or full release circle. Targets plugins with .claude-plugin/plugin.json — do not use for WordPress plugins or themes (those have their own release skills in avista-wp-releases)."
+description: "Ship a new version of an Avista skill-bundle plugin to the org marketplace — bump plugin.json version, land it through a squash-merged release PR, and trigger marketplace sync. Bumps the plugin.json version on a `release/<plugin>-v<VER>` branch, opens a PR with an auto-generated change-list body, squash-merges it into main, then either triggers a GitHub-sync refresh in the admin UI (preferred when the marketplace is connected to the source repo) or packages a .zip for manual upload (fallback). Each release leaves a permanent PR as a discoverable chapter in the repo history. Use when the user says release this plugin, release this skill bundle, ship this plugin, publish to the Avista marketplace, push this plugin to the org, cut a plugin release, bump the plugin version, do a full circle, full PR circle, or full release circle. Targets plugins with .claude-plugin/plugin.json — do not use for WordPress plugins or themes (those have their own release skills in avista-wp-releases)."
 ---
 
 # Ship a skill-bundle plugin to the Avista org marketplace
@@ -42,7 +42,7 @@ Read `plugin.json` to record the current `name` and `version`. The `name` field 
 - **Reserved-word check.** Verify that no skill's `name:` field contains the substring `claude` (case-insensitive). The Avista marketplace rejects skill names containing this reserved word with a "Plugin validation failed" error that *does* report the actual rule (unlike many other validation failures). Other reserved words may exist; if any future upload fails with a similar reserved-word message, add the new word to this check. If the check fails, stop and tell the user which skills need renaming and suggest alternatives (e.g. `release-claude-plugin` → `release-skill-bundle`, `claude-md-audit` → `agent-md-audit`).
 - If the source directory is a git repo, verify the working tree is clean (no uncommitted changes outside the version bump you're about to make). If dirty, stop and report the dirty files. Do not bump version against an unclean tree.
 - **If the source directory is a git repo, verify local `main` is in sync with `origin/main`.** Run `git fetch origin main --quiet`, then verify `git rev-parse HEAD` equals `git rev-parse origin/main` (when on main) or `git merge-base --is-ancestor origin/main HEAD` returns 0 (when on a feature branch). If local is behind, the marketplace sync would ship stale code — stop and tell the user to `git pull --rebase` and rerun. If local is ahead with commits not on the remote, those commits will be in the release; confirm with the user that's intended.
-- If `gh` CLI is available, optionally verify the user is authenticated (`gh auth status`).
+- **`gh` CLI is required.** This skill ships releases via a pull request, which needs `gh`. Run `gh auth status` — if it errors, stop and tell the user to `gh auth login` then rerun.
 
 If any check fails, report the issue and stop.
 
@@ -62,21 +62,63 @@ Edit `plugin.json` and update the `version` field to the new value. Do not touch
 
 Re-validate the JSON after editing (avoid trailing-comma or other syntax mistakes from manual edits).
 
-### Step 5 — Commit and push the source
+### Step 5 — Branch, commit, push, open and squash-merge a release PR
 
-If the source directory is a git repo, run (or hand off to the user):
+Skill-bundle releases go to `main` through a pull request, so each release leaves a readable chapter in the GitHub history (title, summary body, files-changed view, permanent URL). The PR is created, body-populated with a change list, and squash-merged in the same step — the user doesn't need to click merge themselves. `main` stays linear; the release branch is deleted after merge.
 
+If the source directory is not a git repo, skip ahead — there's nothing to PR. Fall through to the manual-upload path in Step 6; GitHub sync requires a connected repo anyway.
+
+Run the following sequence. If you have direct shell access on the user's machine (e.g. Claude Code on the local host), run it yourself. If you're in a sandboxed environment that can't write to the user's repo (e.g. Cowork, where the mounted `.git/index.lock` denies the operation), hand the block to the user and wait for confirmation before proceeding.
+
+Substitute `<plugin-name>` (e.g. `avista-memory-tools`), `<NEW_VERSION>` (e.g. `0.4.0`), and `<plugin-path>` (the directory containing `.claude-plugin/plugin.json`, e.g. `avista-memory-tools` when running from the monorepo root).
+
+```bash
+# 1. Cut the release branch off the up-to-date main (pre-flight already confirmed main is clean and synced).
+BRANCH="release/<plugin-name>-v<NEW_VERSION>"
+git checkout -b "$BRANCH"
+
+# 2. Apply the bump (you've already edited <plugin-path>/.claude-plugin/plugin.json in Step 4).
+git add <plugin-path>/.claude-plugin/plugin.json
+git commit -m "chore(<plugin-name>): release v<NEW_VERSION>"
+
+# 3. Push the branch.
+git push -u origin "$BRANCH"
+
+# 4. Compose the PR body. Auto-summarise what changed in this plugin's directory
+#    since the previous release commit for the same plugin (or, if no previous
+#    release commit exists yet, since the start of history). The body becomes
+#    the chapter content for this release.
+PREV_SHA=$(git log -n1 --format=%H \
+  --grep="^chore(<plugin-name>): release " \
+  origin/main -- <plugin-path>/ 2>/dev/null)
+if [ -n "$PREV_SHA" ]; then
+  CHANGES=$(git log --no-merges --oneline "${PREV_SHA}..HEAD^" -- <plugin-path>/)
+else
+  CHANGES=$(git log --no-merges --oneline HEAD^ -- <plugin-path>/)
+fi
+[ -z "$CHANGES" ] && CHANGES="(no changes outside the version bump itself)"
+PR_BODY=$(printf 'Release **v%s** of \x60%s\x60.\n\n## Changes since last release\n\n%s\n' \
+  "<NEW_VERSION>" "<plugin-name>" "$CHANGES")
+
+# 5. Open the PR and immediately squash-merge it. Branch is deleted on merge.
+gh pr create \
+  --base main \
+  --head "$BRANCH" \
+  --title "chore(<plugin-name>): release v<NEW_VERSION>" \
+  --body "$PR_BODY"
+
+gh pr merge "$BRANCH" --squash --delete-branch
+
+# 6. Sync the local main with the squashed commit so the next step starts clean.
+git checkout main
+git pull --ff-only
 ```
-git commit -am "chore(<plugin-name>): release v<NEW_VERSION>" && git push
-```
 
-If you have direct shell access on the user's machine (e.g. Claude Code on the local host), run it yourself. If you're in a sandboxed environment that can't write to the user's repo (e.g. Cowork, where the mounted `.git/index.lock` denies the operation), tell the user to run it in their own terminal and wait for confirmation.
+**Branch-protection fallback.** If `gh pr merge --squash --delete-branch` errors because branch protection requires reviews or status checks before merge, do not push around the protection. Tell the user to merge the PR in the GitHub UI (the URL was printed by `gh pr create`), wait for confirmation, then run `git checkout main && git pull --ff-only` and continue with Step 6 (marketplace ingestion).
 
-The bump commit must reach the remote `main` before Step 6 — for the GitHub-sync path, the marketplace can't see the new version until then.
+**Why this design.** Each release ends up as a discoverable PR with a meaningful title, a body summarising what shipped, and the diff hung off it. `main` stays linear (squash merge), and the release branch deletes itself, so the only artifact left in the branch list is `main`. The chapter view lives in the PR list, not the branch list.
 
-If the user prefers their own commit-and-push alias (e.g. `gsend`), that's fine — what matters is that the bump commit reaches the remote `main`.
-
-If the source directory is not a git repo, skip the commit and fall through to the manual-upload path in Step 6 — GitHub sync requires a connected repo.
+If the user prefers their own commit alias (e.g. `gsend`) for the bump, that's fine — but the rest of the sequence (branch, push, `gh pr create`, `gh pr merge`) is the skill's contract for landing the release. What matters is that the bump commit reaches `origin/main` through a PR, not as a direct push.
 
 ### Step 6 — Trigger marketplace ingestion
 
@@ -86,7 +128,7 @@ Choose the path based on how the marketplace is wired up. For an Avista plugin i
 
 The marketplace is connected to the plugin's source repo. Picking up the new version is one click:
 
-> The commit is in. To make v<NEW_VERSION> available to the Avista org:
+> The release PR has merged. To make v<NEW_VERSION> available to the Avista org:
 >
 > 1. Open Claude Desktop → Organization settings → Plugins.
 > 2. Find the marketplace that hosts this plugin and click "Update" (or "Sync") on it.
