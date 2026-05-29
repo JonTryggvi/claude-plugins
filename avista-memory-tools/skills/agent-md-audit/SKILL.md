@@ -7,7 +7,7 @@ description: "Audit a CLAUDE.md or AGENTS.md file and classify each section as e
 
 CLAUDE.md content is loaded into context on every turn. Anything that doesn't apply to *every* interaction is paying a per-turn token cost it doesn't deserve. This skill finds those sections, classifies them, and produces a pruned version with a backup of the original.
 
-The audit does not move content — that is a deliberate follow-up the user performs (or asks for in a separate session). The audit only surfaces *what* should move and *where*. Building the skill that absorbs a "MOVE-TO-SKILL" section is its own act.
+The audit surfaces *what* should move and *where*. For MOVE-TO-SKILL sections, the move itself is a separate act the user performs later (building a skill is its own job). For MOVE-TO-MEMORY sections, the audit performs the migration during Step 6 — writing the memory file *before* pruning from CLAUDE.md — so that approving the prune cannot accidentally drop an operational fact on the floor.
 
 ## When to invoke
 
@@ -52,6 +52,15 @@ Examples: "Here's how to wire up PUC for a new plugin" (this is what triggered t
 
 Examples: "I'm Jón Tryggvi, dev at Avista" (user memory), "The 2026 competition deadline is August 31" (project memory), "ActiveCollab is at activecollab.avista.is" (reference memory). These are *facts*, not *rules*, and they belong in the auto-memory store.
 
+**Operational facts get special treatment** — they must always be MOVE-TO-MEMORY, never DELETE, and the memory migration in Step 6 is mandatory for them. These are facts the user needs to find *during an outage* and losing them silently is a real cost. Patterns to recognize:
+
+- SSH/SCP command lines: lines beginning with `ssh `, `scp `, `mosh `, `rsync `, `mysql -h`, `psql -h`, `wp @<env>`, `wp-cli` over SSH.
+- Production / live / staging host strings (anything looking like a hostname with the words `prod`, `live`, `staging`, `.host`, `.live`, `tempurl`, or an explicit environment context nearby).
+- Credential pointers: "API key is in 1Password under X", "the production DB password is in Bitwarden", "WP admin pwd lives in `wp_options`".
+- Sections under headings like "SSH", "Production", "Live", "Deployment", "Credentials", "Access", "Database", or any section whose body is mostly a copy-pasteable connection / login command.
+
+When in doubt about whether something is an operational fact, **err toward MOVE-TO-MEMORY**. The cost of needlessly migrating a non-critical fact is one extra memory file; the cost of accidentally DELETEing an SSH string is digging through git history at 11pm during an incident.
+
 **REPLACE-WITH-POINTER** — content that already lives elsewhere (in a plugin, in a memory file, in another CLAUDE.md) and exists here only as a duplicated copy. Replace with a one-line pointer.
 
 Examples: the full PUC class implementation after `avista-wp-releases` ships (the skill bundles the template; CLAUDE.md just needs to say "the autoupdater scaffold lives in `avista-wp-releases:setup-plugin-autoupdate`"). The "WordPress Composer / vendor" guards if the conventions doc inside `avista-wp-releases` already covers them — replace with "see `avista-wp-releases:setup-plugin-autoupdate` references/conventions.md".
@@ -88,9 +97,21 @@ If the user wants to defer, leave nothing modified and exit.
 
 After approval:
 
-1. Create `~/.claude/backups/<ISO-timestamp>/` (use `date -u +"%Y-%m-%dT%H-%M-%SZ"` for the timestamp). Copy the original CLAUDE.md preserving the relative path inside the backup directory.
-2. Write the pruned version to the target path.
-3. If the target is a project-local CLAUDE.md and the project's working tree is clean, commit with `chore: prune CLAUDE.md (audit + relocate content)`. Skip the commit step if dirty. Do not push.
+1. **Backup.** Create `~/.claude/backups/<ISO-timestamp>/` (use `date -u +"%Y-%m-%dT%H-%M-%SZ"` for the timestamp). Copy the original CLAUDE.md preserving the relative path inside the backup directory.
+
+2. **Migrate MOVE-TO-MEMORY sections** to the appropriate memory store *before* pruning them from CLAUDE.md. For each MOVE-TO-MEMORY section:
+
+   - **Pick a target location.** In order of preference:
+     1. Cowork's auto-memory store (`~/Library/Application Support/Claude/local-agent-mode-sessions/<...>/spaces/<id>/memory/`) — use this when running in a Cowork session and the space is reachable.
+     2. The project's local memory directory if it exists (e.g. `<project>/memory/`, `<project>/.claude/memory/`, `<project>/docs/`) — use this when auditing a project-local CLAUDE.md.
+     3. Ask the user where to save it — only if neither of the above is reachable.
+   - **Write the memory file.** Frontmatter with `name`, `description`, `metadata: type: <user|project|reference>`, then the section content as body. For Cowork auto-memory, also add the file to `MEMORY.md` per the auto-memory rules.
+   - **Verify the write.** Read the file back. If the read fails or the content doesn't match what was written, treat the migration as failed.
+   - **If migration fails or no target is reachable:** add the section to a "could-not-migrate" list. Do **not** remove this section from CLAUDE.md in the next step. Operational-fact sections (per the patterns in Step 3) must succeed migration or stay in CLAUDE.md — refuse to prune them blindly even if the user asked you to.
+
+3. **Write the pruned CLAUDE.md.** All KEEP sections stay verbatim. MOVE-TO-MEMORY sections that migrated successfully are removed. MOVE-TO-MEMORY sections in the could-not-migrate list stay in place. REPLACE-WITH-POINTER sections are replaced with their one-line pointer. DELETE sections are removed. MOVE-TO-SKILL sections stay in CLAUDE.md (with the suggestion preserved in the Step 7 report) since the user builds those skills separately.
+
+4. **Commit (if applicable).** If the target is a project-local CLAUDE.md and the project's working tree is clean apart from the audit's changes, commit with `chore: prune CLAUDE.md (audit + relocate content)`. Skip the commit if the tree was dirty. Do not push. Do not commit the memory file writes (those go to memory stores outside the repo).
 
 If the target is `~/.claude/CLAUDE.md`, there is no repo to commit to — just write and report.
 
@@ -101,8 +122,9 @@ After execution:
 - Backup directory path.
 - New file's line count (vs. original — show the delta).
 - Per-classification counts (how many KEEP / MOVE-TO-SKILL / MOVE-TO-MEMORY / REPLACE-WITH-POINTER / DELETE).
-- The list of MOVE-TO-SKILL items as suggested next actions: "These sections were classified as skill candidates — build a skill for each one when ready."
-- The list of MOVE-TO-MEMORY items as suggested next actions: "These facts were classified as memory candidates — save them to memory with appropriate types."
+- **Memory migrations performed** — for each MOVE-TO-MEMORY section that was migrated, list the section heading and the full path to the memory file written. Make this section prominent in the report; the user should be able to scan it and confirm nothing critical was misplaced.
+- **Sections left in place** (if any) — MOVE-TO-MEMORY sections that couldn't be migrated. Show what couldn't migrate, why (no target reachable, write failed, operational-fact safety hold), and what the user needs to do to handle them manually.
+- The list of MOVE-TO-SKILL items as suggested next actions: "These sections were classified as skill candidates — build a skill for each one when ready, then re-run this audit to replace them with one-line pointers."
 
 ## Classification edge cases
 
