@@ -1,0 +1,19 @@
+name: Mirror to JonTryggvi
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Push to JonTryggvi/claude-plugins
+        run: |
+          git remote add mirror https://x-access-token:${{ secrets.MIRROR_PAT }}@github.com/JonTryggvi/claude-plugins.git
+          git push mirror main --force
