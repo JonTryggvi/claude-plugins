@@ -5,6 +5,9 @@ on:
     branches:
       - main
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
 jobs:
   mirror:
     runs-on: ubuntu-latest
@@ -14,6 +17,8 @@ jobs:
           fetch-depth: 0
 
       - name: Push to JonTryggvi/claude-plugins
+        env:
+          PAT: ${{ secrets.MIRROR_PAT }}
         run: |
-          git remote add mirror https://x-access-token:${{ secrets.MIRROR_PAT }}@github.com/JonTryggvi/claude-plugins.git
+          git remote add mirror https://JonTryggvi:${PAT}@github.com/JonTryggvi/claude-plugins.git
           git push mirror main --force
