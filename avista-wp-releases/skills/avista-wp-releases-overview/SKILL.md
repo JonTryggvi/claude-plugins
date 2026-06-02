@@ -1,5 +1,5 @@
 ---
-name: overview
+name: avista-wp-releases-overview
 description: Overview of the avista-wp-releases plugin — what it bundles, what each skill does, the order to use them in, and the prerequisites. Use when the user asks "what does avista-wp-releases do", "what's in this plugin", "how do I get started with the WordPress release pipeline", "which skill do I run first", or right after installing the plugin.
 ---
 

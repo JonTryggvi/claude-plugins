@@ -18,7 +18,7 @@ Releasing skill-bundle plugins through the Avista org marketplace is also a mult
 
 All of these skills turn what would otherwise be ad-hoc prompts into one-line invocations.
 
-Plus an `overview` skill — run `/avista-memory-tools:overview` (or ask "what does this plugin do?") to print this summary and how the skills fit together in-session.
+Plus an `avista-memory-tools-overview` skill — run `/avista-memory-tools-overview` (or ask "what does this plugin do?") to print this summary and how the skills fit together in-session.
 
 ## Conventions
 

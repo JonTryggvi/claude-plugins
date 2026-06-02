@@ -1,5 +1,5 @@
 ---
-name: overview
+name: avista-wp-prod-ops-overview
 description: Overview of the avista-wp-prod-ops plugin — what it's for, what its one skill does, and the safety preconditions. Use when the user asks "what does avista-wp-prod-ops do", "what's in this plugin", "how do I get started", or right after installing the plugin.
 ---
 

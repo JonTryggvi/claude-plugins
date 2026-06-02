@@ -10,7 +10,7 @@ Avista's WordPress release pipeline for plugins *and* themes, packaged as a Clau
 | `release-plugin` | Ships a new version of a plugin that already has the pipeline wired up. Bumps the header version in the main plugin file, prepares the `gsend` commit, walks through creating the GitHub release, verifies the workflow attached `<plugin>-release.zip`. |
 | `release-theme` | Ships a new version of a theme. Bumps `style.css`, prepares the `gsend` commit, walks through the release, verifies `<theme-slug>.zip` was attached. |
 
-Plus an `overview` skill — run `/avista-wp-releases:overview` (or just ask "what does this plugin do?") to print this summary, the recommended order, and prerequisites in-session.
+Plus an `avista-wp-releases-overview` skill — run `/avista-wp-releases-overview` (or just ask "what does this plugin do?") to print this summary, the recommended order, and prerequisites in-session.
 
 ## Why this exists
 

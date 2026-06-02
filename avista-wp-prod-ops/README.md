@@ -7,7 +7,7 @@ Tools for operating safely on Avista WordPress sites where the working folder is
 | Skill | Purpose |
 |---|---|
 | [`wp-prod-ssh-ops/`](skills/wp-prod-ssh-ops/) | Inspect-first / backup-before-change workflow for WP-over-SSH projects, with full WP Code Box 2 snippet install/update procedure (clone known-good row → `wp eval-file`), Hummingbird cache-clear, and Breakdance-theme-stub awareness. |
-| [`overview/`](skills/overview/) | Prints a summary of this plugin — what it's for, the skill, and the safety preconditions. Run `/avista-wp-prod-ops:overview` or ask "what does this plugin do?". |
+| [`avista-wp-prod-ops-overview/`](skills/avista-wp-prod-ops-overview/) | Prints a summary of this plugin — what it's for, the skill, and the safety preconditions. Run `/avista-wp-prod-ops-overview` or ask "what does this plugin do?". |
 
 ## When this plugin gets used
 

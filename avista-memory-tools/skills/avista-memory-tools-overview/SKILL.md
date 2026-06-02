@@ -1,5 +1,5 @@
 ---
-name: overview
+name: avista-memory-tools-overview
 description: Overview of the avista-memory-tools plugin — what it bundles, what each skill does, when to reach for each, and how they fit together. Use when the user asks "what does avista-memory-tools do", "what's in this plugin", "how do I get started", "which memory/CLAUDE.md skill do I need", or right after installing the plugin.
 ---
 

@@ -1,5 +1,5 @@
 ---
-name: overview
+name: avista-wpgb-trp-fix-overview
 description: Overview of the avista-wpgb-trp-fix plugin — the bug it fixes, what its one skill does, and how the fix works. Use when the user asks "what does avista-wpgb-trp-fix do", "what's in this plugin", "how do I get started", or right after installing the plugin.
 ---
 
