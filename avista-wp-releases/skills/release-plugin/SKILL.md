@@ -19,7 +19,10 @@ Run these checks before touching anything. Bail if any fail.
 - **Local `main` is in sync with `origin/main`.** Run `git fetch origin main --quiet`, then verify `git rev-parse HEAD` equals `git rev-parse origin/main`. If local is behind, the release would ship stale code — stop and tell the user to `git pull --rebase` and rerun. If local is ahead with commits that aren't on the remote, those commits would be in the release; confirm with the user that's intended.
 - The plugin's main file has a valid `Version:` header (read it; record the current value).
 - The plugin has `.github/workflows/release.yml`. If not, the user needs `setup-plugin-autoupdate` first.
-- `gh` CLI is authenticated to the right GitHub owner (`gh auth status`). If not, ask the user to run `gh auth login` and rerun the skill.
+- **Switch `gh` to the correct account for this repo.** Check the remote URL with `git config --get remote.origin.url`, then:
+  - `*github.com[:/]JonTryggvi*` → `gh auth switch --user JonTryggvi`
+  - `*github.com-avista[:/]Avista*` or `*github.com[:/]Avista*` → `gh auth switch --user jontryggviAvista`
+  Do this silently — only report if the switch fails. Confirm the active account with `gh api user --jq .login`.
 
 If anything is dirty or missing, report it and stop — do not bump version or commit against an unclean tree, and do not release from a stale `main`.
 

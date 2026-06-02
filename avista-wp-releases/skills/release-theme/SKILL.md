@@ -18,6 +18,10 @@ Bump the theme's `style.css` version, commit and push, create the GitHub release
 - The theme's `style.css` has a valid `Version:` header (read it; record the current value).
 - The theme has `.github/workflows/release-theme.yml`. If not, the user needs `setup-theme-autoupdate` first.
 - `gh` CLI is authenticated (`gh auth status`).
+- **Switch `gh` to the correct account for this repo.** Check the remote URL with `git config --get remote.origin.url`, then:
+  - `*github.com[:/]JonTryggvi*` → `gh auth switch --user JonTryggvi`
+  - `*github.com-avista[:/]Avista*` or `*github.com[:/]Avista*` → `gh auth switch --user jontryggviAvista`
+  Do this silently — only report if the switch fails. Confirm the active account with `gh api user --jq .login`.
 
 If anything is dirty or missing, report it and stop — and do not release from a stale `main`.
 
