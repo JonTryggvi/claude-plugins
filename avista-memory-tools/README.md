@@ -1,12 +1,13 @@
 # avista-memory-tools
 
-Maintenance tools for the agent-instructions and memory layers. Four skills:
+Maintenance tools for the agent-instructions, memory, and git-hygiene layers:
 
 | Skill | What it does |
 |---|---|
 | `bootstrap-agent-md` | Generates a project-local CLAUDE.md from the project's source — surveys structure, reads README and package manifests, scans recent commits, and proposes a CLAUDE.md covering architecture, conventions, workflows, and gotchas specific to that codebase. Use on any project that doesn't have a CLAUDE.md yet. |
 | `agent-md-audit` | Audits an existing CLAUDE.md (or any equivalent agent-instructions file) and classifies each section as keep, move-to-skill, move-to-memory, replace-with-pointer, or delete. Proposes a diff, waits for approval, executes with a timestamped backup. |
 | `memory-health-check` | Lints the auto-memory store. Checks frontmatter validity, wiki-link resolution, MEMORY.md size and consistency, stale-date detection, duplicates. Reports findings by severity; optionally fixes the mechanical issues with approval. |
+| `pre-push-sync-check` | Checks whether the local branch is in sync with `origin/main` before a push or release — fetches the remote, compares HEAD, and reports ahead / behind / diverged / in-sync. Use before any push where shipping stale code or hitting a non-fast-forward push would be costly. |
 | `release-skill-bundle` | Ships a new version of any Avista skill-bundle plugin to the org marketplace. Bumps `plugin.json` version, commits the source via `gsend`, repackages the plugin as a `.zip` with the correct wrapper-directory structure, and walks through the upload UI. Recursively applies to this plugin too — once `avista-memory-tools` is installed, this is the skill you'll use to ship its next version. |
 
 ## Why this exists
@@ -15,7 +16,9 @@ CLAUDE.md and memory both rot if left alone. CLAUDE.md accretes content that sho
 
 Releasing skill-bundle plugins through the Avista org marketplace is also a multi-step procedure (version bump, source commit, rezip with the right wrapper-directory structure, manual upload) that needs to happen consistently across every plugin Avista ships. Without a skill, the procedure is something you remember imperfectly each time, and the consequences of getting the zip shape wrong are silent rejection at the marketplace ("Plugin validation failed" with no detail).
 
-All three skills turn what would otherwise be ad-hoc prompts into one-line invocations.
+All of these skills turn what would otherwise be ad-hoc prompts into one-line invocations.
+
+Plus an `overview` skill — run `/avista-memory-tools:overview` (or ask "what does this plugin do?") to print this summary and how the skills fit together in-session.
 
 ## Conventions
 
@@ -30,6 +33,7 @@ All three skills turn what would otherwise be ad-hoc prompts into one-line invoc
 - **`bootstrap-agent-md`** when joining a project that has no CLAUDE.md yet. One-shot per project — once CLAUDE.md exists, use `agent-md-audit` to refine it.
 - **`agent-md-audit`** every few months on each project's CLAUDE.md, or any time a file starts feeling bloated. Also after migrating workflow content into a new plugin (the audit finds what's now redundant).
 - **`memory-health-check`** monthly — light enough to be a habit, thorough enough to catch broken wiki-links and stale entries before they mislead future sessions. Pairs with the `consolidate-memory` skill (an Anthropic standard skill that ships with Cowork) — that one is a quarterly reflective pass; this one is a monthly linter.
+- **`pre-push-sync-check`** before any push or release — a quick fetch-and-compare against `origin/main` so you don't ship stale code or hit a non-fast-forward push.
 - **`release-skill-bundle`** every time you've edited a plugin's source and want the next version live for the Avista org.
 
 ## A note on which persistence layer
@@ -39,6 +43,7 @@ All three skills turn what would otherwise be ad-hoc prompts into one-line invoc
 | `bootstrap-agent-md` | Project CLAUDE.md | `<project>/CLAUDE.md` — loaded by both Cowork and Claude Code |
 | `agent-md-audit` | Any CLAUDE.md | Same as input file |
 | `memory-health-check` | Cowork auto-memory | `~/Library/.../spaces/<id>/memory/` — Cowork only |
+| `pre-push-sync-check` | n/a | Read-only — fetches and compares, writes nothing |
 | `release-skill-bundle` | n/a | Builds `.zip`, doesn't persist anything |
 
 `bootstrap-agent-md` is the high-leverage skill for Claude-Code-primary workflows because it writes to the CLAUDE.md layer that's loaded automatically in *both* tools. `memory-health-check` is Cowork-only because the auto-memory store doesn't exist in Claude Code.

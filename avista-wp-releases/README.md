@@ -1,13 +1,16 @@
 # avista-wp-releases
 
-Avista's WordPress release pipeline for plugins *and* themes, packaged as a Claude plugin. Four skills, each focused on one concern:
+Avista's WordPress release pipeline for plugins *and* themes, packaged as a Claude plugin. Each skill is focused on one concern:
 
 | Skill | What it does |
 |---|---|
+| `setup-gh-multiuser` | Onboards a developer's machine for multi-account GitHub — `gh` CLI auth + SSH keys so `git push` and `gh release create` target the correct account based on the repo's remote. Run once per machine; it's the prerequisite for the release skills. |
 | `setup-plugin-autoupdate` | Wires GitHub Releases + plugin-update-checker (PUC v5p6) into a new WordPress plugin. Drops in the bootstrap class, the Actions workflow, the Composer dependency, and the conventions. |
 | `setup-theme-autoupdate` | Same pipeline for a WordPress theme. Different version source (`style.css`), different PUC arguments (`get_stylesheet_directory()`), different release zip naming (`<theme-slug>.zip`), no brand-icon injection. |
 | `release-plugin` | Ships a new version of a plugin that already has the pipeline wired up. Bumps the header version in the main plugin file, prepares the `gsend` commit, walks through creating the GitHub release, verifies the workflow attached `<plugin>-release.zip`. |
 | `release-theme` | Ships a new version of a theme. Bumps `style.css`, prepares the `gsend` commit, walks through the release, verifies `<theme-slug>.zip` was attached. |
+
+Plus an `overview` skill — run `/avista-wp-releases:overview` (or just ask "what does this plugin do?") to print this summary, the recommended order, and prerequisites in-session.
 
 ## Why this exists
 

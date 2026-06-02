@@ -9,6 +9,7 @@ Recurs across multiple Avista client sites running **WP Grid Builder + Translate
 | Skill | Purpose |
 |---|---|
 | [`fix-wpgb-translatepress-ajax/`](skills/fix-wpgb-translatepress-ajax/) | Detect the WPGB AJAX transport (query-var vs REST), deploy the matching filter pair, verify via browser MCP. Includes a ready-to-paste PHP snippet. |
+| [`overview/`](skills/overview/) | Prints a summary of this plugin — the bug it fixes, the skill, and how the fix works. Run `/avista-wpgb-trp-fix:overview` or ask "what does this plugin do?". |
 
 ## When this plugin gets used
 

@@ -9,12 +9,12 @@
     {
       "name": "avista-memory-tools",
       "source": "./avista-memory-tools",
-      "description": "Maintenance tools for the agent-instructions and memory layers — bootstrap a project CLAUDE.md from its source, audit existing CLAUDE.md files for content that belongs elsewhere, lint the auto-memory store for staleness and drift, and ship updates to Avista skill-bundle plugins through the org marketplace."
+      "description": "Maintenance tools for the agent-instructions, memory, and git-hygiene layers — bootstrap a project CLAUDE.md from its source, audit existing CLAUDE.md files for content that belongs elsewhere, lint the auto-memory store for staleness and drift, check a branch is in sync with origin/main before pushing, and ship updates to Avista skill-bundle plugins through the org marketplace."
     },
     {
       "name": "avista-wp-releases",
       "source": "./avista-wp-releases",
-      "description": "Avista's WordPress release pipeline for plugins and themes — scaffold GitHub Releases + plugin-update-checker (PUC v5p6) auto-updates, and ship new versions through that pipeline."
+      "description": "Avista's WordPress release pipeline for plugins and themes — onboard a developer's machine for multi-account GitHub (gh CLI + SSH), scaffold GitHub Releases + plugin-update-checker (PUC v5p6) auto-updates, and ship new versions through that pipeline."
     },
     {
       "name": "avista-wp-prod-ops",
@@ -24,7 +24,7 @@
     {
       "name": "avista-wpgb-trp-fix",
       "source": "./avista-wpgb-trp-fix",
-      "description": "Diagnose and fix the recurring bug where WP Grid Builder facets and pagination return the default language on TranslatePress sites — ships a transport-aware filter pair (query-var AJAX + REST insurance) that translates WPGB responses for the referer's language."
+      "description": "Diagnose and fix the recurring bug where WP Grid Builder facets and pagination return the default language on TranslatePress sites — root cause is WPGB's AJAX response never passing through TRP's dynamic-content translator. Ships a transport-aware filter pair (query-var AJAX + REST insurance) that translates WPGB responses for the referer's language."
     }
   ]
 }
