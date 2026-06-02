@@ -1,0 +1,22 @@
+# ─── .zshrc ───────────────────────────────────────────────────────────────────
+# Runs for every interactive shell. Minimal by design — the team functions live
+# in ~/.zsh/*.zsh (loaded by ~/.zprofile). This file just wires up the prompt and
+# guarantees ~/.zsh/ is loaded even in non-login interactive shells.
+
+# Optional: oh-my-zsh + powerlevel10k. Leave commented out if you don't use them.
+# export ZSH="$HOME/.oh-my-zsh"
+# ZSH_THEME="powerlevel10k"
+# plugins=(git)
+# source "$ZSH/oh-my-zsh.sh"
+
+# Fallback: if ~/.zprofile wasn't sourced (non-login interactive shell), load
+# the modular config here so the team functions (gsend, set_gh_user, …) exist.
+if ! typeset -f sb > /dev/null; then
+  for _f in "$HOME/.zsh"/*.zsh; do
+    [[ -f "$_f" ]] && source "$_f"
+  done
+  unset _f
+fi
+
+# Powerlevel10k prompt config, if present.
+[[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh

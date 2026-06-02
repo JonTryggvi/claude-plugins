@@ -4,7 +4,7 @@ Avista's WordPress release pipeline for plugins *and* themes, packaged as a Clau
 
 | Skill | What it does |
 |---|---|
-| `setup-gh-multiuser` | Onboards a developer's machine for multi-account GitHub — `gh` CLI auth + SSH keys so `git push` and `gh release create` target the correct account based on the repo's remote. Run once per machine; it's the prerequisite for the release skills. |
+| `setup-dev-machine` | Sets up a new Avista dev Mac end-to-end — base tooling (Homebrew, gh, git), shell config (`~/.zprofile` + `~/.zshrc` + `~/.zsh` team functions), SSH keys, gh multi-account auth, and git identity. A plain-language, hand-holding guide. Run once per machine; it's the prerequisite for the release skills. |
 | `setup-plugin-autoupdate` | Wires GitHub Releases + plugin-update-checker (PUC v5p6) into a new WordPress plugin. Drops in the bootstrap class, the Actions workflow, the Composer dependency, and the conventions. |
 | `setup-theme-autoupdate` | Same pipeline for a WordPress theme. Different version source (`style.css`), different PUC arguments (`get_stylesheet_directory()`), different release zip naming (`<theme-slug>.zip`), no brand-icon injection. |
 | `release-plugin` | Ships a new version of a plugin that already has the pipeline wired up. Bumps the header version in the main plugin file, prepares the `gsend` commit, walks through creating the GitHub release, verifies the workflow attached `<plugin>-release.zip`. |

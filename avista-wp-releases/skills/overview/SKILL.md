@@ -15,7 +15,7 @@ Present this overview to the user, then point them at the right skill for what t
 
 | Skill | What it does | When to use it |
 |---|---|---|
-| `setup-gh-multiuser` | Onboards a developer's machine for multi-account GitHub — `gh` CLI auth + SSH keys so `git push` and `gh release create` hit the right account based on the repo's remote. | **Once per machine**, before your first release. The prerequisite for everything else. |
+| `setup-dev-machine` | Sets up a new Avista dev Mac end-to-end — base tooling (Homebrew, gh, git), shell config (`~/.zprofile` + `~/.zsh` team functions), SSH keys, and gh multi-account auth so `git push` and `gh release create` hit the right account. A plain-language guide. | **Once per machine**, before your first release. The prerequisite for everything else. |
 | `setup-plugin-autoupdate` | Wires GitHub Releases + PUC into a WordPress **plugin** (bootstrap class, Actions workflow, Composer dep, version constant). | **Once per plugin**, when adding the pipeline to a new plugin. |
 | `setup-theme-autoupdate` | Same pipeline for a WordPress **theme** (version from `style.css`, theme-specific PUC args, `<theme-slug>.zip`). | **Once per theme**. |
 | `release-plugin` | Ships a new version of a plugin that already has the pipeline — bump, commit, push, tag, release, verify the built zip. | **Every plugin release.** |
@@ -24,14 +24,14 @@ Present this overview to the user, then point them at the right skill for what t
 ## Recommended order
 
 ```
-1. setup-gh-multiuser          ← once per machine (gh accounts + SSH)
+1. setup-dev-machine           ← once per machine (tooling, shell, SSH, gh accounts)
 2. setup-plugin/theme-autoupdate ← once per project (scaffold the pipeline)
 3. release-plugin / release-theme ← each time you ship a version
 ```
 
 ## Prerequisites
 
-- **`setup-gh-multiuser` first.** Releases fail with `403` if `gh` is on the wrong account or the
+- **`setup-dev-machine` first.** Releases fail with `403` if `gh` is on the wrong account or the
   machine has no SSH key for the account that owns the repo. Run it before any release.
 - A plugin/theme must have the pipeline scaffolded (`setup-*-autoupdate`) before `release-*` works. If
   it isn't wired up yet, `release-*` will tell you to run the matching setup skill first.
