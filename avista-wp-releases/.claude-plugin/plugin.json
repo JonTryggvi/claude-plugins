@@ -1,11 +1,19 @@
 {
   "name": "avista-wp-releases",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "Avista's WordPress release pipeline for plugins and themes — onboard a developer's machine for multi-account GitHub (gh CLI + SSH), scaffold GitHub Releases + plugin-update-checker (PUC v5p6) auto-updates, and ship new versions through that pipeline.",
   "author": {
     "name": "Avista",
     "url": "https://avista.is"
   },
   "homepage": "https://avista.is",
-  "keywords": ["wordpress", "plugin", "theme", "auto-update", "github-releases", "puc", "avista"]
+  "keywords": [
+    "wordpress",
+    "plugin",
+    "theme",
+    "auto-update",
+    "github-releases",
+    "puc",
+    "avista"
+  ]
 }
