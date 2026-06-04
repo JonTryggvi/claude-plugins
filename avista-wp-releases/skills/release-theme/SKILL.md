@@ -14,7 +14,7 @@ Bump the theme's `style.css` version, commit and push, create the GitHub release
 ### Step 1 — Pre-flight
 
 - The repo is on `main` and the working tree is clean.
-- **Local `main` is in sync with `origin/main`.** Run `git fetch origin main --quiet`, then verify `git rev-parse HEAD` equals `git rev-parse origin/main`. If local is behind, the release would ship stale code — stop and tell the user to `git pull --rebase` and rerun. If local is ahead with commits that aren't on the remote, those commits would be in the release; confirm with the user that's intended.
+- **Local `main` is in sync with `origin/main`.** Run `git fetch origin main --tags --quiet`, then verify `git rev-parse HEAD` equals `git rev-parse origin/main`. If local is behind, the release would ship stale code — stop and tell the user to `git pull --rebase` and rerun. If local is ahead with commits that aren't on the remote, those commits would be in the release; confirm with the user that's intended. (The `--tags` keeps the local tag list current — the previous release's tag was created on the remote by `gh release create` and is never pulled back automatically, so without this the latest-tag check in Step 2 reads a stale tag.)
 - The theme's `style.css` has a valid `Version:` header (read it; record the current value).
 - The theme has `.github/workflows/release-theme.yml`. If not, the user needs `setup-theme-autoupdate` first.
 - `gh` CLI is authenticated (`gh auth status`).
@@ -27,7 +27,7 @@ If anything is dirty or missing, report it and stop — and do not release from 
 
 ### Step 2 — Determine the next version
 
-Look at the current version from `style.css` and the git log since the last release tag. Propose a semver bump:
+Look at the current version from `style.css` and the git log since the last release tag (`git log $(git describe --tags --abbrev=0)..HEAD --oneline`). Because Step 1 fetched tags, `git describe` now reflects the actual latest release. If the header is *still* ahead of the latest tag, that's a genuine "a prior bump was committed but the release was never created" case — flag it to the user and offer to create the missing release for the existing header version, rather than treating it as a normal bump. Propose a semver bump:
 
 - **major** (X.0.0) — breaking template changes, removed page templates, dropped post-type support, anything that would break a site running this theme.
 - **minor** (x.Y.0) — new templates, new theme features, new hooks/filters.
@@ -73,6 +73,8 @@ Success criteria:
 
 - The workflow completes successfully.
 - The release page shows `<theme-slug>.zip` attached as an asset.
+
+Once the release is confirmed, run `git fetch origin --tags --quiet` to pull the just-created `v<NEW_VERSION>` tag into the local repo. `gh release create` makes the tag on the remote only — without this, the local tag list stays a release behind and the next run's Step 2 check re-triggers the "was this version actually released?" detour.
 
 Common failures:
 

@@ -16,7 +16,7 @@ Bump the plugin header version, commit and push, create the GitHub release, and 
 Run these checks before touching anything. Bail if any fail.
 
 - The repo is on `main` and the working tree is clean (no uncommitted changes, no untracked files that belong in the release).
-- **Local `main` is in sync with `origin/main`.** Run `git fetch origin main --quiet`, then verify `git rev-parse HEAD` equals `git rev-parse origin/main`. If local is behind, the release would ship stale code — stop and tell the user to `git pull --rebase` and rerun. If local is ahead with commits that aren't on the remote, those commits would be in the release; confirm with the user that's intended.
+- **Local `main` is in sync with `origin/main`.** Run `git fetch origin main --tags --quiet`, then verify `git rev-parse HEAD` equals `git rev-parse origin/main`. If local is behind, the release would ship stale code — stop and tell the user to `git pull --rebase` and rerun. If local is ahead with commits that aren't on the remote, those commits would be in the release; confirm with the user that's intended. (The `--tags` keeps the local tag list current — the previous release's tag was created on the remote by `gh release create` and is never pulled back automatically, so without this the latest-tag check in Step 2 reads a stale tag.)
 - The plugin's main file has a valid `Version:` header (read it; record the current value).
 - The plugin has `.github/workflows/release.yml`. If not, the user needs `setup-plugin-autoupdate` first.
 - **Switch `gh` to the correct account for this repo.** Check the remote URL with `git config --get remote.origin.url`, then:
@@ -28,7 +28,7 @@ If anything is dirty or missing, report it and stop — do not bump version or c
 
 ### Step 2 — Determine the next version
 
-Look at the current version from the plugin header and the git log since the last release tag (`git log $(git describe --tags --abbrev=0)..HEAD --oneline`). Propose a semver bump:
+Look at the current version from the plugin header and the git log since the last release tag (`git log $(git describe --tags --abbrev=0)..HEAD --oneline`). Because Step 1 fetched tags, `git describe` now reflects the actual latest release. If the header is *still* ahead of the latest tag, that's a genuine "a prior bump was committed but the release was never created" case — flag it to the user and offer to create the missing release for the existing header version, rather than treating it as a normal bump. Propose a semver bump:
 
 - **major** (X.0.0) — breaking changes to the public API, REST contract, database schema, or shortcode signatures.
 - **minor** (x.Y.0) — new features, additive REST endpoints, new shortcodes, new admin pages.
@@ -82,6 +82,8 @@ Success criteria:
 
 - The workflow completes successfully (green check).
 - The release page (`/releases/tag/v<NEW_VERSION>`) shows `avista-<plugin>-release.zip` attached as an asset, sized roughly the same as previous releases (give or take a few hundred KB).
+
+Once the release is confirmed, run `git fetch origin --tags --quiet` to pull the just-created `v<NEW_VERSION>` tag into the local repo. `gh release create` makes the tag on the remote only — without this, the local tag list stays a release behind and the next run's Step 2 check re-triggers the "was this version actually released?" detour.
 
 If the workflow fails or no asset is attached, the release is not actually shippable — PUC won't pick up a release without the asset. Common failures:
 
