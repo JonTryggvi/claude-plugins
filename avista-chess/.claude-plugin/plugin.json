@@ -1,0 +1,11 @@
+{
+  "name": "avista-chess",
+  "version": "0.1.0",
+  "description": "Import your chess.com and lichess games, analyze them with Stockfish, and get plain-language coaching — a local dashboard with a blunder trainer, opening deep-dives, and AI coaching. The setup skill clones the Avista-Chess app, asks for your usernames, installs dependencies, and launches the dashboard for you.",
+  "author": {
+    "name": "Avista",
+    "url": "https://avista.is"
+  },
+  "homepage": "https://avista.is",
+  "keywords": ["chess", "analysis", "stockfish", "coaching", "chess.com", "lichess", "avista"]
+}

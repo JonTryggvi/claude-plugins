@@ -25,6 +25,11 @@
       "name": "avista-wpgb-trp-fix",
       "source": "./avista-wpgb-trp-fix",
       "description": "Diagnose and fix the recurring bug where WP Grid Builder facets and pagination return the default language on TranslatePress sites — root cause is WPGB's AJAX response never passing through TRP's dynamic-content translator. Ships a transport-aware filter pair (query-var AJAX + REST insurance) that translates WPGB responses for the referer's language."
+    },
+    {
+      "name": "avista-chess",
+      "source": "./avista-chess",
+      "description": "Import your chess.com and lichess games, analyze them with Stockfish, and get a local dashboard with plain-language coaching — a blunder trainer, opening deep-dives, a review queue, and AI coaching (live via your own key, or queued for a Claude session). One skill clones the Avista-Chess app, asks for your usernames, installs dependencies, and launches the dashboard."
     }
   ]
 }
