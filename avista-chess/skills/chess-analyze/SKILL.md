@@ -30,5 +30,9 @@ If the app isn't set up yet (no folder / no `profile.json`), route to `chess-set
    ```
    For a deeper engine pass, mention `src/analyze.py --depth 16` (slower) and
    `src/build_web.py --deepdive "Ruy Lopez:black"` to add an opening deep-dive.
+   **To go further back in time** (more history = a sounder diagnosis), use
+   `src/fetch.py --more` instead of plain `fetch.py` — it pulls the next older
+   batch (~100/platform) rather than the most recent games. Re-run `analyze` +
+   `build_web` after. The dashboard's Tools tab has a one-click button for this.
 4. **Tell the user to reload** the dashboard (or run `/chess-dashboard` if it isn't
    running) to see the updated numbers.

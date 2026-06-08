@@ -84,17 +84,31 @@ Write `profile.json` at the app root (it's git-ignored) with the collected value
 ```
 This is the only configuration step — `src/config.py` reads it.
 
-### Step 7 — Run the pipeline (offer; it's the slow part)
+### Step 7 — Analyze a first batch, then offer to go deeper
 
-Ask whether to analyze now. If yes, run from the folder (each step prints progress):
+Fetching is **batched** (~100 games/platform by default), so the first diagnosis
+is quick. Ask whether to analyze now. If yes, run from the folder:
 ```
-.venv/bin/python src/fetch.py        # download PGNs
-.venv/bin/python src/analyze.py      # Stockfish analysis — minutes for hundreds of games
+.venv/bin/python src/fetch.py        # recent batch (~100/platform)
+.venv/bin/python src/analyze.py      # Stockfish — ~2-3s/game, resumable
 .venv/bin/python src/build_web.py    # build dashboard data
 ```
-Warn that `analyze` is the long step (~2–3s/game). It's resumable, so it's safe to
-interrupt and resume. If they'd rather defer, tell them `/chess-analyze` does this
-later.
+Report the coverage it prints (games + date range per platform).
+
+Then **offer a deeper diagnosis** — opening and blunder rates are noisy on small
+samples, so more history gives a sounder read. Ask: *"Want me to fetch further
+back for a more reliable diagnosis?"* If yes, loop — each round pulls the next
+older batch and re-analyzes only the new games (analysis is cached per game, so a
+round costs just the new batch):
+```
+.venv/bin/python src/fetch.py --more
+.venv/bin/python src/analyze.py
+.venv/bin/python src/build_web.py
+```
+Repeat until they're satisfied or `fetch --more` reports nothing further back.
+They can also do this any time from the dashboard's **Tools** tab ("Fetch older
+games & re-analyze") or via `/chess-analyze`. If they'd rather not analyze now,
+tell them `/chess-analyze` does it later.
 
 ### Step 8 — Launch
 
