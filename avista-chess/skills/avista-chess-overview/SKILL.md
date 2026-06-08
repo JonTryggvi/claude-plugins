@@ -24,6 +24,7 @@ Present this overview, then route the user to the right skill.
 | `chess-analyze` | Re-run the pipeline after you've played more games — fetch latest, analyze (incremental/resumable), rebuild dashboard data. |
 | `chess-coach-answer` | Answer the questions you queued from the dashboard's *Queue for Claude* button — reads `coach.json`, engine-checks each position, writes coaching back so it appears in the Coach panel. No API key needed. |
 | `chess-dashboard` | Relaunch the local dashboard at http://localhost:8777. |
+| `chess-build-app` | **macOS only.** Package everything into a double-clickable `AvistaChess.app` (Python + dashboard + Stockfish bundled) that runs with no terminal or Claude Code — for handing to a non-developer. |
 
 ## Order
 

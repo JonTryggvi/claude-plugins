@@ -123,4 +123,6 @@ app README); the *Queue for Claude* path works without a key.
 
 Tell them what they have and the other skills: `/chess-analyze` (refresh data),
 `/chess-coach-answer` (answer questions they queued in the dashboard),
-`/chess-dashboard` (relaunch). Done.
+`/chess-dashboard` (relaunch). **On macOS**, also mention `/chess-build-app` — it
+packages everything into a double-clickable `AvistaChess.app` that runs with no
+terminal or Claude Code (nice for handing to a non-developer). Done.

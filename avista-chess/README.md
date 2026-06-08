@@ -10,6 +10,7 @@ dashboard with coaching. The plugin sets up the **Avista-Chess** app
 | `chess-analyze` | Re-run the pipeline after playing more games — fetch latest, analyze (incremental & resumable), rebuild dashboard data. |
 | `chess-coach-answer` | Answer the questions you queued from the dashboard's *Queue for Claude* button — reads `coach.json`, engine-checks each position, writes coaching back so it shows in the Coach panel. No API key needed. |
 | `chess-dashboard` | Relaunch the local dashboard. |
+| `chess-build-app` | **macOS only.** Package everything into a double-clickable `AvistaChess.app` (bundles Python + dashboard + Stockfish) that runs with no terminal or Claude Code — for handing to a non-developer. |
 | `avista-chess-overview` | Prints what's in the plugin and which skill to run — `/avista-chess-overview`. |
 
 ## Why this exists
