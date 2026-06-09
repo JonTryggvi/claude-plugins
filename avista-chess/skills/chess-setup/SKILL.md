@@ -67,8 +67,10 @@ If the folder exists and already holds the app, skip cloning and go to Step 6
 From inside the folder:
 ```
 python3 -m venv .venv
-.venv/bin/pip install --quiet python-chess requests
+.venv/bin/pip install --quiet -r requirements.txt
 ```
+(`requirements.txt` is the app's runtime set — `chess` + `requests`. The
+`chess-build-app` skill installs the extra build tooling only when needed.)
 Then Stockfish, if `command -v stockfish` was empty:
 - macOS: `brew install stockfish`
 - Debian/Ubuntu: `sudo apt-get install stockfish`

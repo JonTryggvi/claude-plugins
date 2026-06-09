@@ -28,8 +28,9 @@ other OSes, stop and explain that the standalone app is mac-only; the browser fl
 2. **Confirm platform** — `uname` must be `Darwin`. If not, stop (see above).
 3. **Install the build dependencies** into the project venv (one-time, ~250MB):
    ```
-   .venv/bin/pip install pywebview pyinstaller
+   .venv/bin/pip install -r requirements-build.txt
    ```
+   (Pulls the runtime deps plus `pywebview` + `pyinstaller`.)
    Stockfish must be on PATH (the script bundles its binary) — `command -v stockfish`;
    if missing, `brew install stockfish` first.
 4. **Build** (propose, then run — takes ~1 minute):
