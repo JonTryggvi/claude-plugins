@@ -1,6 +1,6 @@
 {
   "name": "avista-wp-prod-ops",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Operate safely on Avista WordPress sites whose code lives on production and is reached over SSH — inspect-first triage, mandatory git backup of DB-stored code, and WP Code Box 2 snippet install/update without the admin UI.",
   "author": {
     "name": "Avista",

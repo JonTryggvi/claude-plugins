@@ -190,6 +190,36 @@ wp db query "SELECT id, title, codeType FROM {prefix}wpcb_snippets WHERE enabled
 
 Use the `id` of any row from the right `codeType` group.
 
+### Object-cache gotcha — flush before bulk regeneration
+
+Many Avista/WPMU DEV-managed hosts run a **persistent external object cache** (Redis/Memcached). Detect it:
+
+```bash
+ssh user@host 'cd <wproot> && wp eval "echo wp_using_ext_object_cache() ? \"EXTERNAL_OBJECT_CACHE\" : \"no_persistent_object_cache\";"'
+```
+
+WPCB caches its **active-snippets query** in the object cache. The admin UI invalidates that cache on save — but a raw DB write (`$wpdb->update`, `wp db query "UPDATE …"`, or any non-UI write to the `{prefix}wpcb_snippets` row) does **not**. So after editing a snippet directly in the DB, a bulk regeneration run as a single `wp eval-file` request can execute a **stale** copy of the snippet for an unknown subset of items, leaving silent stragglers — even though the row in the DB is already correct.
+
+This is deceptive in two ways:
+
+- Reading the code back from the DB shows the NEW code (`SELECT code FROM {prefix}wpcb_snippets WHERE id=N`), so the row looks fine.
+- Re-running a single item in isolation a bit later usually comes back clean (the object cache has refreshed by then), which fools you into thinking the bulk pass worked.
+
+**Rule:** after editing a WPCB snippet directly in the DB, always flush the object cache **before** any bulk regeneration:
+
+```bash
+ssh user@host 'cd <wproot> && wp cache flush'
+```
+
+With the cache flushed, the single bulk request reads fresh snippet code once and applies it to every item deterministically. Then verify with a **site-wide count query**, not a spot-check of one or two items.
+
+**Two different caches — don't conflate them:**
+
+- **`wp cache flush`** clears the **object cache** — fixes stale snippet code / query data (this gotcha).
+- The Hummingbird **page cache** is separate and clears the rendered HTML — see the page-cache gotcha below.
+
+Editing a PHP snippet that affects rendered HTML may require **both**.
+
 ### Cache gotcha — separate "not deployed" from "cached"
 
 - **PHP snippets affecting AJAX or POST responses** — take effect immediately. Those requests are not page-cached.

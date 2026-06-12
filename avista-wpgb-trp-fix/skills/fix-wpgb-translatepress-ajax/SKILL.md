@@ -96,6 +96,8 @@ Why it works:
 
 Deploy as a WP Code Box PHP snippet on the live site. Follow the [[wp-prod-ssh-ops]] WPCB installer procedure (inspect-first, base64 transport, clone an enabled PHP row as the template, `wp eval-file` the bundled installer).
 
+> If you edit this snippet's row directly in the DB and then bulk-regenerate, run `wp cache flush` first — on hosts with a persistent object cache, a raw DB write leaves WPCB serving stale snippet code. See the object-cache gotcha in [[wp-prod-ssh-ops]].
+
 If WPCB isn't available on the site, deploy as an mu-plugin:
 
 ```bash
