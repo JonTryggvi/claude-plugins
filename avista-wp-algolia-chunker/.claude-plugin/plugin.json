@@ -1,0 +1,11 @@
+{
+  "name": "avista-wp-algolia-chunker",
+  "version": "0.1.0",
+  "description": "Keep WordPress + Algolia records under the 100KB hard limit (and the ~10KB relevance budget) by chunking long text the right way — route big content through the chunked `content` path of wp-search-with-algolia (which splits via Algolia_Utils::explode_content with distinct), keep small fields as shared attributes, and for non-plugin/custom-attribute cases use a standalone word-boundary chunker that emits {id}-{n} distinct records. Covers long bodies, denormalized search blobs, and extracted PDF text.",
+  "author": {
+    "name": "Avista",
+    "url": "https://avista.is"
+  },
+  "homepage": "https://avista.is",
+  "keywords": ["wordpress", "algolia", "wp-search-with-algolia", "search", "chunking", "distinct", "indexing", "records", "pdf", "avista"]
+}

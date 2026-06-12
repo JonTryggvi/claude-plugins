@@ -30,6 +30,11 @@
       "name": "avista-chess",
       "source": "./avista-chess",
       "description": "Import your chess.com and lichess games, analyze them with Stockfish, and get a local dashboard with plain-language coaching — a blunder trainer, opening deep-dives, a review queue, and AI coaching (live via your own key, or queued for a Claude session). One skill clones the Avista-Chess app, asks for your usernames, installs dependencies, and launches the dashboard."
+    },
+    {
+      "name": "avista-wp-algolia-chunker",
+      "source": "./avista-wp-algolia-chunker",
+      "description": "Keep WordPress + Algolia records under the 100KB hard limit (and the ~10KB relevance budget) by chunking long text the right way — route big content through the chunked `content` path of wp-search-with-algolia (which splits via Algolia_Utils::explode_content with distinct), keep small fields as shared attributes, and for non-plugin/custom-attribute cases use a standalone word-boundary chunker that emits {id}-{n} distinct records. Covers long bodies, denormalized search blobs, and extracted PDF text."
     }
   ]
 }
