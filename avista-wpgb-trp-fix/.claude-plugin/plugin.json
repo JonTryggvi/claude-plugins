@@ -1,6 +1,6 @@
 {
   "name": "avista-wpgb-trp-fix",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Diagnose and fix the recurring bug where WP Grid Builder facets and pagination return the default language on TranslatePress sites — root cause is WPGB's AJAX response never passing through TRP's dynamic-content translator. Ships a transport-aware filter pair (query-var AJAX + REST insurance) that translates WPGB responses for the referer's language.",
   "author": {
     "name": "Avista",
