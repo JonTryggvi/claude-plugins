@@ -34,7 +34,13 @@ Look at the current version from the plugin header and the git log since the las
 - **minor** (x.Y.0) — new features, additive REST endpoints, new shortcodes, new admin pages.
 - **patch** (x.y.Z) — bug fixes, internal refactors, copy changes, asset updates.
 
-Show the user: current version, proposed next version, and a one-line summary of why. Ask them to confirm or override.
+Show the user: current version, proposed next version, and a one-line summary of why.
+
+**STOP. Do not bump, commit, tag, or release until the user explicitly approves
+THIS release.** Being asked earlier to make the code change is NOT approval to
+ship it, and approval for a previous release does not carry to this one. Wait for
+an explicit go-ahead on both the version and the act of releasing. If they
+haven't said yes, hold here.
 
 ### Step 3 — Bump the version
 
@@ -57,6 +63,9 @@ The version-bump commit must be on the remote `main` before Step 5 — creating 
 If the user prefers their own commit-and-push alias (e.g. `gsend`), that's fine — what matters is that the version-bump commit reaches the remote `main`.
 
 ### Step 5 — Create the GitHub release
+
+Only run this after the user approved the release in Step 2. If you skipped
+that gate, go back and ask now.
 
 Two options. Default to the `gh` CLI command.
 

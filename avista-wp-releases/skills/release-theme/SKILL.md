@@ -33,7 +33,13 @@ Look at the current version from `style.css` and the git log since the last rele
 - **minor** (x.Y.0) — new templates, new theme features, new hooks/filters.
 - **patch** (x.y.Z) — CSS tweaks, bug fixes, copy changes, asset updates.
 
-Show current version, proposed next version, and a one-line summary. Ask the user to confirm or override.
+Show current version, proposed next version, and a one-line summary.
+
+**STOP. Do not bump, commit, tag, or release until the user explicitly approves
+THIS release.** Being asked earlier to make the code change is NOT approval to
+ship it, and approval for a previous release does not carry to this one. Wait for
+an explicit go-ahead on both the version and the act of releasing. If they
+haven't said yes, hold here.
 
 ### Step 3 — Bump the version
 
@@ -56,6 +62,9 @@ The version-bump commit must be on the remote `main` before Step 5.
 If the user prefers their own commit-and-push alias (e.g. `gsend`), that's fine — what matters is that the version-bump commit reaches the remote `main`.
 
 ### Step 5 — Create the GitHub release
+
+Only run this after the user approved the release in Step 2. If you skipped
+that gate, go back and ask now.
 
 ```
 gh release create v<NEW_VERSION> \
