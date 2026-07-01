@@ -1,0 +1,21 @@
+{
+  "name": "avista-repo-audit",
+  "version": "0.1.0",
+  "description": "Read-only security audit for untrusted external repositories before anyone in the org clones, opens, or adopts them. Detects indirect prompt injection, supply-chain payloads, install-time hooks, obfuscated code, reverse-shell primitives, and credential exfiltration — the Mozilla 0DIN attack class. Clones the target into a throwaway quarantine, runs a deterministic scanner across nine phases, and produces a risk-scored report. Never executes, installs, or imports anything from the target.",
+  "author": {
+    "name": "Avista",
+    "url": "https://avista.is"
+  },
+  "homepage": "https://avista.is",
+  "keywords": [
+    "security",
+    "audit",
+    "supply-chain",
+    "prompt-injection",
+    "reverse-shell",
+    "malware",
+    "code-review",
+    "quarantine",
+    "avista"
+  ]
+}

@@ -35,6 +35,11 @@
       "name": "avista-wp-algolia-chunker",
       "source": "./avista-wp-algolia-chunker",
       "description": "Keep WordPress + Algolia records under the 100KB hard limit (and the ~10KB relevance budget) by chunking long text the right way — route big content through the chunked `content` path of wp-search-with-algolia (which splits via Algolia_Utils::explode_content with distinct), keep small fields as shared attributes, and for non-plugin/custom-attribute cases use a standalone word-boundary chunker that emits {id}-{n} distinct records. Covers long bodies, denormalized search blobs, and extracted PDF text."
+    },
+    {
+      "name": "avista-repo-audit",
+      "source": "./avista-repo-audit",
+      "description": "Read-only security audit for untrusted external repositories before anyone in the org clones, opens, installs, or runs them — screens for indirect prompt injection, supply-chain payloads, install-time hooks (npm postinstall / pip setup.py / composer scripts / Claude-plugin hooks & mcpServers), DNS/HTTP payload delivery, base64/hex obfuscation, reverse-shell primitives, credential exfiltration, and persistence. Clones the target into a throwaway quarantine and runs a deterministic nine-phase scanner; never executes, installs, imports, or builds the target, and never obeys instructions found inside its files."
     }
   ]
 }
