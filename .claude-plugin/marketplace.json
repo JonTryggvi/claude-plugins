@@ -40,6 +40,11 @@
       "name": "avista-repo-audit",
       "source": "./avista-repo-audit",
       "description": "Read-only security audit for untrusted external repositories before anyone in the org clones, opens, installs, or runs them — screens for indirect prompt injection, supply-chain payloads, install-time hooks (npm postinstall / pip setup.py / composer scripts / Claude-plugin hooks & mcpServers), DNS/HTTP payload delivery, base64/hex obfuscation, reverse-shell primitives, credential exfiltration, and persistence. Clones the target into a throwaway quarantine and runs a deterministic nine-phase scanner; never executes, installs, imports, or builds the target, and never obeys instructions found inside its files."
+    },
+    {
+      "name": "avista-wp-performance",
+      "source": "./avista-wp-performance",
+      "description": "Diagnose and fix performance problems on Avista WordPress + Breakdance sites — a modular, diagnose-first, approval-gated toolkit for the recurring PHP-worker-saturation problem (pages that sometimes take 30–60s, ~30s media uploads). A read-only audit funnel measures TTFB on a cache HIT vs a cache-busted MISS, rules out object-cache/DB/autoload, tests cache warmth/TTL, and analyzes the nginx access log + php_slow.log to pinpoint the bottleneck; then targeted skills act on it — a bot firewall + robots.txt to recover workers from crawler overload, Breakdance Server-Timing profiling to name the hot templates/nodes, guarded block-theme render micro-optimizations (classic themes only), and a slow-media-upload fix (Smush synchronous optimization + image-size sprawl). Every production change is backed up first, deployed only on explicit approval, verified before/after, and shipped with a one-line rollback; cache-TTL and Breakdance-template work are diagnosed precisely and handed off (WPMU DEV Hub / builder UI) rather than forced over SSH."
     }
   ]
 }

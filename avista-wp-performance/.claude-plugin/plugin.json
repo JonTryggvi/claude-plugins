@@ -1,0 +1,24 @@
+{
+  "name": "avista-wp-performance",
+  "version": "0.1.0",
+  "description": "Diagnose and fix performance problems on Avista WordPress + Breakdance sites — a modular, diagnose-first, approval-gated toolkit. Read-only audit funnel (TTFB HIT vs MISS, infra ruling-out, cache warmth, access-log + php_slow analysis) pinpoints the bottleneck, then targeted skills act on it: a bot firewall + robots.txt to recover PHP workers from crawler overload, Breakdance Server-Timing profiling to name the hot templates/nodes, safe block-theme render micro-optimizations, and a slow-media-upload fix (Smush synchronous optimization + image-size sprawl). Every production change is backed up first, deployed only on explicit approval, verified before/after, and shipped with a one-line rollback.",
+  "author": {
+    "name": "Avista",
+    "url": "https://avista.is"
+  },
+  "homepage": "https://avista.is",
+  "keywords": [
+    "wordpress",
+    "breakdance",
+    "performance",
+    "ttfb",
+    "cache",
+    "bot-firewall",
+    "server-timing",
+    "smush",
+    "php-workers",
+    "wpmudev",
+    "ssh",
+    "avista"
+  ]
+}

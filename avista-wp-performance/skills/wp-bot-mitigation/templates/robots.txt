@@ -1,0 +1,79 @@
+# robots.txt for www.samkeppni.is — managed by Avista
+# Layer 1 (polite): AI/scraper crawlers that HONOR robots.txt are told to leave.
+# Enforcement for bots that ignore this file is in the mu-plugin (avista-bot-firewall.php).
+
+# ---- AI-training & scraper crawlers: full disallow (these respect robots.txt) ----
+User-agent: GPTBot
+Disallow: /
+
+User-agent: ChatGPT-User
+Disallow: /
+
+User-agent: OAI-SearchBot
+Disallow: /
+
+User-agent: CCBot
+Disallow: /
+
+User-agent: Google-Extended
+Disallow: /
+
+User-agent: anthropic-ai
+Disallow: /
+
+User-agent: ClaudeBot
+Disallow: /
+
+User-agent: Claude-Web
+Disallow: /
+
+User-agent: Amazonbot
+Disallow: /
+
+User-agent: meta-externalagent
+Disallow: /
+
+User-agent: FacebookBot
+Disallow: /
+
+User-agent: Bytespider
+Disallow: /
+
+User-agent: PetalBot
+Disallow: /
+
+User-agent: Applebot-Extended
+Disallow: /
+
+User-agent: DataForSeoBot
+Disallow: /
+
+User-agent: SemrushBot
+Disallow: /
+
+User-agent: AhrefsBot
+Disallow: /
+
+User-agent: MJ12bot
+Disallow: /
+
+User-agent: DotBot
+Disallow: /
+
+# NOTE: facebookexternalhit is deliberately NOT blocked — it powers link previews
+# on Facebook / Messenger / WhatsApp when someone shares a samkeppni.is link.
+
+# ---- Everyone else (incl. Googlebot & bingbot): allowed, but kept out of ----
+# ---- expensive / effectively-infinite URL spaces that never cache.        ----
+User-agent: *
+Disallow: /wp-admin/
+Allow: /wp-admin/admin-ajax.php
+Disallow: /*?s=
+Disallow: /*?           # query-string URLs (facets, tracking) — DECISION: confirm WPGB facets don't need indexing
+Disallow: /*/feed/
+Disallow: /wp-json/
+Disallow: /resolution/linked-categories/
+# Disallow: /urlausnir/<verify-IS-slug>/   # IS equivalent of resolution/linked-categories — confirm slug before enabling
+Crawl-delay: 10
+
+Sitemap: https://www.samkeppni.is/sitemap_index.xml
