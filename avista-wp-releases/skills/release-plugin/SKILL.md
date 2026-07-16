@@ -18,7 +18,7 @@ Run these checks before touching anything. Bail if any fail.
 - The repo is on `main` and the working tree is clean (no uncommitted changes, no untracked files that belong in the release).
 - **Local `main` is in sync with `origin/main`.** Run `git fetch origin main --tags --quiet`, then verify `git rev-parse HEAD` equals `git rev-parse origin/main`. If local is behind, the release would ship stale code — stop and tell the user to `git pull --rebase` and rerun. If local is ahead with commits that aren't on the remote, those commits would be in the release; confirm with the user that's intended. (The `--tags` keeps the local tag list current — the previous release's tag was created on the remote by `gh release create` and is never pulled back automatically, so without this the latest-tag check in Step 2 reads a stale tag.)
 - The plugin's main file has a valid `Version:` header (read it; record the current value).
-- The plugin has `.github/workflows/release.yml`. If not, the user needs `setup-plugin-autoupdate` first.
+- The plugin has a GitHub Actions workflow that triggers on `release: published`. The scaffolded name is `.github/workflows/release.yml`, but pre-existing plugins vary (e.g. `algolia-indexer` uses `build-and-release.yml`) — check the trigger, not the filename: `grep -ln "release" .github/workflows/*.yml` and confirm one fires on release publish. If none does, the user needs `setup-plugin-autoupdate` first.
 - **Switch `gh` to the correct account for this repo.** Check the remote URL with `git config --get remote.origin.url`, then:
   - `*github.com[:/]JonTryggvi*` → `gh auth switch --user JonTryggvi`
   - `*github.com-avista[:/]Avista*` or `*github.com[:/]Avista*` → `gh auth switch --user jontryggviAvista`
@@ -46,7 +46,20 @@ haven't said yes, hold here.
 
 Edit the `Version:` line in the plugin's main file (the plugin header, top comment block). Use the new version string with no `v` prefix — the header takes `1.4.26`, not `v1.4.26`. The `v` prefix is only for the git tag.
 
-Do not edit any other file. The plugin derives `*_VERSION` from this header via `get_file_data()`, so this single edit is the source of truth.
+**Do not assume the header is the only edit.** Find how the version reaches the asset cache-buster before editing:
+
+```
+grep -rn "get_file_data\|wp_get_theme()->get\|_VERSION" <main-file> inc/ | head
+```
+
+- **Derived** — the constant comes from the header via `get_file_data()` (the `setup-plugin-autoupdate` scaffold does this) → edit the header only; it is the single source of truth.
+- **Hardcoded** — a literal `define( '<X>_VERSION', '1.2.3' )` sits next to the header (e.g. `algolia-indexer`) → edit the header AND the constant, then confirm no stale references remain:
+
+  ```
+  grep -rn "<old-version>" --include="*.php" . | grep -v vendor/
+  ```
+
+This matters because plugins commonly pass the constant as the `$ver` cache-buster on every `wp_enqueue_style()` / `wp_enqueue_script()`. Bumping only the header of a hardcoded plugin ships CSS/JS still tagged `?ver=<old>`, so browsers and asset-optimizing caches keep serving the previous assets. For a release whose entire payload is CSS/JS, that is a silent total failure — the release appears to do nothing.
 
 ### Step 4 — Commit and push
 
@@ -152,13 +165,54 @@ ssh -i ~/.ssh/jont jontryggvi_ssh@regluvordur.tempurl.host "cd ~/sites/regluvord
 
 **Admin-UI alternative (no SSH) — works, but best-effort, not guaranteed.** PUC's `admin_init` check primes the update in wp-admin within ~12h, or immediately via the "Check for updates" link on the Plugins page; the user then clicks Update. Be aware this can intermittently fail with **"the plugin is at the latest version"** *even right after a check shows the update available*. Mechanism (verified): PUC hooks the `update_plugins` transient on read and authoritatively rewrites the plugin's entry from its persisted `external_updates-<slug>` option — anything not in that stored state is stripped on the next read. So if a throttled, rate-limited, or momentarily asset-less GitHub response has nulled the stored `->update`, WordPress's apply step finds no pending update and bails. A forced "Check for updates" repopulates the stored state, but a later poll can null it again before the user clicks Update, and the interactive check's *display* does not guarantee the *persisted* state agrees at apply time. Treat the admin button as best-effort; `wp plugin install --force` (above) is the only *deterministic* path.
 
-**4. Verify the update.**
+**4. Purge caches — install first, purge second. Order matters.**
+
+`wp plugin install --force` swaps the files, but on hosts with stacked caches (WPMU DEV hosting is the verified case, 2026-07-16) the site keeps serving the OLD markup and OLD asset bundles to real visitors indefinitely. Three independent caches sit between the new files and the visitor, and the install clears none of them:
+
+1. **Hummingbird Asset Optimization bundles** — stored as `wphb_minify_group` posts with a per-URL mapping; clean URLs reuse the stored (stale) mapping.
+2. **Hummingbird critical/used CSS** — `wp-content/wphb-cache/critical-css/<domain>/*-used.css`.
+3. **The host's nginx FastCGI "Static Server Cache"** — sits IN FRONT of WordPress (`x-cache-enabled: true`, `x-cache: HIT`); invisible to WordPress.
+
+Run this AFTER the install succeeds and BEFORE verifying. **Clearing before the install rebuilds the OLD assets and the deploy still ships stale** — a real trap that cost a full debugging cycle:
+
+```
+ssh <ssh-target> "cd <wp-root> && wp eval '
+  // Hummingbird asset bundles + critical CSS, if HB is present.
+  if ( class_exists( \"\\Hummingbird\\Core\\Utils\" ) ) {
+    foreach ( [ \"page_cache\", \"minify\", \"critical_css\" ] as \$mod ) {
+      \$m = \\Hummingbird\\Core\\Utils::get_module( \$mod );
+      if ( is_object( \$m ) && method_exists( \$m, \"clear_cache\" ) ) { \$m->clear_cache(); }
+    }
+  }
+  // Host edge cache. Platform-provided on WPMU DEV hosting only — always guard.
+  if ( function_exists( \"wpmudev_hosting_purge_static_cache\" ) ) {
+    wpmudev_hosting_purge_static_cache();
+    echo \"static cache purged\n\";
+  } else {
+    echo \"no wpmudev_hosting_purge_static_cache() — not WPMU DEV hosting, or platform changed\n\";
+  }
+'"
+```
+
+- **Always guard `wpmudev_hosting_purge_static_cache()` with `function_exists()`.** The function belongs to the hosting platform, not to any site — WPMU DEV defines it in a platform mu-plugin outside the site root (`/var/web/plugins/mu-plugins/misc-functions.php`). It issues an nginx `PURGE` to the site's own origin (127.0.0.1) and defaults to `/*` (purge everything, optional path argument). It does not exist off WPMU DEV hosting, and the platform can remove it — a bare call fatals the deploy. WPMU DEV's own Dashboard plugin calls it with exactly this guard.
+- **Caveat (verified twice):** calling `clear_cache()` on the HB modules via `wp eval` reports success but does NOT delete the critical-CSS `*-used.css` files (some observed 3 months old afterward). Only Hummingbird's admin **Asset Optimization → clear cache** actually regenerated the bundles. After a CSS-affecting deploy, tell the user to clear Asset Optimization from the HB admin as well — do not promise the `wp eval` clear is sufficient.
+
+**5. Verify the update — on disk AND on the front end.**
 
 ```
 ssh <ssh-target> "wp plugin list --status=active --name=<plugin-directory> --field=version"
 ```
 
-The output should show the new version. If maintenance mode was toggled during the update, confirm it's off:
+The output should show the new version — but this only proves the files on disk. It cannot detect an edge cache still serving stale HTML to real visitors (the exact failure the purge above exists for; the disk check reported success while every visitor got the previous release). Also check the front end:
+
+```
+curl -skI "https://<site>/" | grep -i '^x-cache'   # expect MISS after a purge, not HIT
+curl -sk  "https://<site>/" | grep -o "ver=[0-9.]*" | head   # expect the new version
+```
+
+**Verify on a CLEAN URL, never with a cache-buster.** Query-string URLs BYPASS the nginx static cache (`x-cache: BYPASS`, reason "Arguments found"), so a `?nocache=123` request renders fresh and looks correct while real traffic is still being served stale HTML. Checking `?nocache=` produced a false "fixed" verdict twice in one session.
+
+If maintenance mode was toggled during the update, confirm it's off:
 
 ```
 ssh <ssh-target> "wp maintenance-mode is-active"
@@ -166,9 +220,9 @@ ssh <ssh-target> "wp maintenance-mode is-active"
 
 Should return "Maintenance mode is not active."
 
-**5. Report.**
+**6. Report.**
 
-Tell the user the new version is live on production, the verify command's output, and the URL of the site if known. If anything in steps 3–4 failed, surface the error verbatim and stop — don't try to debug or rollback automatically.
+Tell the user the new version is live on production, the verify commands' output, and the URL of the site if known. If anything in steps 3–5 failed, surface the error verbatim and stop — don't try to debug or rollback automatically.
 
 The release flow ends here. What the user does next — keep working on `main`, pull the new tag locally, branch off for the next piece of work — is up to them and outside this skill's scope.
 
@@ -184,6 +238,6 @@ If the release is broken before *any* site has updated (the workflow failed befo
 
 ## Notes
 
-- The plugin header version is the single source of truth. PUC reads it, the `_VERSION` constant derives from it, the asset cache-buster (if used) reads it. Bumping anywhere else creates drift.
+- The plugin header version is what PUC reads. In derived plugins the `_VERSION` constant and asset cache-buster follow it automatically; in hardcoded plugins (see Step 3) the constant must be bumped in the same commit, or the release ships assets with a stale `?ver=` cache-buster.
 - The git tag format is `v<version>` (with the `v` prefix). The plugin header is the bare version. Do not unify them — WP's header format does not accept `v` prefixes.
 - Releases without an attached zip are silently ignored by PUC (because of `REQUIRE_RELEASE_ASSETS`). This fails closed — no broken updates — but also means a release with a CI failure looks "published" while not actually shipping.

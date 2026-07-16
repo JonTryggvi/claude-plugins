@@ -16,7 +16,7 @@ Bump the theme's `style.css` version, commit and push, create the GitHub release
 - The repo is on `main` and the working tree is clean.
 - **Local `main` is in sync with `origin/main`.** Run `git fetch origin main --tags --quiet`, then verify `git rev-parse HEAD` equals `git rev-parse origin/main`. If local is behind, the release would ship stale code — stop and tell the user to `git pull --rebase` and rerun. If local is ahead with commits that aren't on the remote, those commits would be in the release; confirm with the user that's intended. (The `--tags` keeps the local tag list current — the previous release's tag was created on the remote by `gh release create` and is never pulled back automatically, so without this the latest-tag check in Step 2 reads a stale tag.)
 - The theme's `style.css` has a valid `Version:` header (read it; record the current value).
-- The theme has `.github/workflows/release-theme.yml`. If not, the user needs `setup-theme-autoupdate` first.
+- The theme has a GitHub Actions workflow that triggers on `release: published`. The scaffolded name is `.github/workflows/release-theme.yml`, but pre-existing repos vary — check the trigger, not the filename: `grep -ln "release" .github/workflows/*.yml` and confirm one fires on release publish. If none does, the user needs `setup-theme-autoupdate` first.
 - `gh` CLI is authenticated (`gh auth status`).
 - **Switch `gh` to the correct account for this repo.** Check the remote URL with `git config --get remote.origin.url`, then:
   - `*github.com[:/]JonTryggvi*` → `gh auth switch --user JonTryggvi`
@@ -45,7 +45,20 @@ haven't said yes, hold here.
 
 Edit the `Version:` line in `style.css` (the top comment block, in the theme metadata). Use the bare version with no `v` prefix.
 
-Do not edit `functions.php` or anything else. The theme has no `_VERSION` constant by default — `style.css` is the single source of truth that WP reads.
+**Check how the version reaches the asset cache-buster before assuming this is the only edit:**
+
+```
+grep -rn "wp_get_theme()->get\|get_file_data\|_VERSION" functions.php inc/ | head
+```
+
+- **Derived** (`wp_get_theme()->get( 'Version' )` / `get_file_data()` — e.g. `islandiamagica`) → edit `style.css` only; it is the single source of truth that WP and the enqueues both read.
+- **Hardcoded** (`define( '<X>_VERSION', '1.2.3' )` in `functions.php`) → edit `style.css` AND the constant, then confirm no stale references remain:
+
+  ```
+  grep -rn "<old-version>" --include="*.php" . | grep -v vendor/
+  ```
+
+Bumping only `style.css` when the enqueue cache-buster is hardcoded ships CSS/JS still tagged `?ver=<old>`, so browsers and asset-optimizing caches keep serving the previous assets — for a CSS-only release, a silent total failure.
 
 ### Step 4 — Commit and push
 
@@ -130,17 +143,58 @@ ssh <ssh-target> "cd <wp-root> && wp maintenance-mode activate && wp theme insta
 
 `--force` overwrites the theme directory in place; the active theme stays active and the version updates. Maintenance mode ensures no request hits half-swapped files. The theme zip's top folder is the theme slug (which equals the install directory), so `--force` lands in place — but if a site installed the theme under a different directory name, confirm with `wp theme list` first, since `--force` keys off the zip's folder name.
 
-**4. Verify the update.**
+**4. Purge caches — install first, purge second. Order matters.**
+
+`wp theme install --force` swaps the files, but on hosts with stacked caches (WPMU DEV hosting is the verified case, 2026-07-16) the site keeps serving the OLD markup and OLD asset bundles to real visitors indefinitely. Three independent caches sit between the new files and the visitor, and the install clears none of them:
+
+1. **Hummingbird Asset Optimization bundles** — stored as `wphb_minify_group` posts with a per-URL mapping; clean URLs reuse the stored (stale) mapping.
+2. **Hummingbird critical/used CSS** — `wp-content/wphb-cache/critical-css/<domain>/*-used.css`.
+3. **The host's nginx FastCGI "Static Server Cache"** — sits IN FRONT of WordPress (`x-cache-enabled: true`, `x-cache: HIT`); invisible to WordPress.
+
+Run this AFTER the install succeeds and BEFORE verifying. **Clearing before the install rebuilds the OLD assets and the deploy still ships stale** — a real trap that cost a full debugging cycle:
+
+```
+ssh <ssh-target> "cd <wp-root> && wp eval '
+  // Hummingbird asset bundles + critical CSS, if HB is present.
+  if ( class_exists( \"\\Hummingbird\\Core\\Utils\" ) ) {
+    foreach ( [ \"page_cache\", \"minify\", \"critical_css\" ] as \$mod ) {
+      \$m = \\Hummingbird\\Core\\Utils::get_module( \$mod );
+      if ( is_object( \$m ) && method_exists( \$m, \"clear_cache\" ) ) { \$m->clear_cache(); }
+    }
+  }
+  // Host edge cache. Platform-provided on WPMU DEV hosting only — always guard.
+  if ( function_exists( \"wpmudev_hosting_purge_static_cache\" ) ) {
+    wpmudev_hosting_purge_static_cache();
+    echo \"static cache purged\n\";
+  } else {
+    echo \"no wpmudev_hosting_purge_static_cache() — not WPMU DEV hosting, or platform changed\n\";
+  }
+'"
+```
+
+- **Always guard `wpmudev_hosting_purge_static_cache()` with `function_exists()`.** The function belongs to the hosting platform, not to any site — WPMU DEV defines it in a platform mu-plugin outside the site root (`/var/web/plugins/mu-plugins/misc-functions.php`). It issues an nginx `PURGE` to the site's own origin (127.0.0.1) and defaults to `/*` (purge everything, optional path argument). It does not exist off WPMU DEV hosting, and the platform can remove it — a bare call fatals the deploy. WPMU DEV's own Dashboard plugin calls it with exactly this guard.
+- **Caveat (verified twice):** calling `clear_cache()` on the HB modules via `wp eval` reports success but does NOT delete the critical-CSS `*-used.css` files (some observed 3 months old afterward). Only Hummingbird's admin **Asset Optimization → clear cache** actually regenerated the bundles. After a CSS-affecting deploy, tell the user to clear Asset Optimization from the HB admin as well — do not promise the `wp eval` clear is sufficient.
+
+**5. Verify the update — on disk AND on the front end.**
 
 ```
 ssh <ssh-target> "wp theme list --status=active --name=<theme-directory> --field=version"
 ```
 
-Should show the new version.
+Should show the new version — but this only proves the files on disk. It cannot detect an edge cache still serving stale HTML to real visitors (the exact failure the purge above exists for; the disk check reported success while every visitor got the previous release). Also check the front end:
 
-**5. Report.**
+```
+curl -skI "https://<site>/" | grep -i '^x-cache'   # expect MISS after a purge, not HIT
+curl -sk  "https://<site>/" | grep -o "ver=[0-9.]*" | head   # expect the new version
+```
 
-Tell the user the new version is live on production, the verify command's output, and the URL of the site if known. If anything in steps 3–4 failed, surface the error verbatim and stop — don't try to debug or rollback automatically.
+**Verify on a CLEAN URL, never with a cache-buster.** Query-string URLs BYPASS the nginx static cache (`x-cache: BYPASS`, reason "Arguments found"), so a `?nocache=123` request renders fresh and looks correct while real traffic is still being served stale HTML. Checking `?nocache=` produced a false "fixed" verdict twice in one session.
+
+If maintenance mode was toggled during the update, confirm it's off: `ssh <ssh-target> "wp maintenance-mode is-active"` should return "Maintenance mode is not active."
+
+**6. Report.**
+
+Tell the user the new version is live on production, the verify commands' output, and the URL of the site if known. If anything in steps 3–5 failed, surface the error verbatim and stop — don't try to debug or rollback automatically.
 
 The release flow ends here. What the user does next — keep working on `main`, pull the new tag locally, branch off for the next piece of work — is up to them and outside this skill's scope.
 
@@ -156,7 +210,7 @@ If the release is broken *before any site has updated*, it's safe to delete both
 
 ## Notes
 
-- The `style.css` `Version:` line is the single source of truth. WP reads it for theme metadata; PUC reads it to detect updates.
+- The `style.css` `Version:` line is what WP reads for theme metadata and PUC reads to detect updates. In derived themes the enqueue cache-buster follows it too; if the theme hardcodes a version constant (see Step 3), bump that in the same commit.
 - Git tag format: `v<version>` (with `v`). `style.css` header: bare version. Do not unify — WP's header format does not accept `v` prefixes.
 - Themes use `screenshot.png` for the admin UI image. If you change it, the new screenshot only shows up after the user *updates* the theme (PUC includes it in the release asset).
 - Child themes do *not* need their own release pipeline — they inherit the parent theme's update mechanism for any code they reference. They do need their own bump-and-release if they have independent versioning, but the autoupdater wiring lives on the parent.
