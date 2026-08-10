@@ -28,9 +28,14 @@ mentioned. Treat `list_projects` as *one input among several*, never as the answ
 
 ## Before anything else: design access
 
-The DesignSync reads need design scope on the login. If the first call fails with an auth/permission error,
-tell the user to run **`/design-consent`** once (some builds name it `/design-login`), then retry. This is a
-one-time grant — don't loop on it, and don't fall back to guessing at systems you can't read.
+The DesignSync reads need design scope on the login — but **don't front-load a consent step. Just make the
+first read.** DesignSync raises the access prompt on its own first call, so the user approves inline and you
+carry straight on. Sending them off to run a command first adds a step the harness already handles, and it
+reads as a blocker before they've seen anything work.
+
+Only when a call *hard-fails* with an auth/permission error instead of prompting is the manual route worth
+mentioning: **`/design-consent`** (some builds name it `/design-login`). It's a one-time grant — don't loop
+on it, and don't fall back to guessing at systems you can't read.
 
 ## Discovery: build a union, then verify
 

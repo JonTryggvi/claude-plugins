@@ -16,9 +16,12 @@ it quietly teaches the client the wrong visual language.
 
 ### 1. Design access
 
-DesignSync reads need design scope. If a call fails with an auth error, ask the user to run
-**`/design-consent`** once (some builds call it `/design-login`) and retry. If it's still blocked, jump to
-[Fallbacks](#fallbacks) rather than stalling.
+DesignSync reads need design scope, but don't gate the work behind a consent step — **make the first read
+and let DesignSync raise the access prompt itself.** The user approves inline and you continue; asking them
+to run a command first is friction the harness already absorbs.
+
+Only if a call hard-fails with an auth error, point them at **`/design-consent`** (some builds call it
+`/design-login`) and retry. If it's still blocked, jump to [Fallbacks](#fallbacks) rather than stalling.
 
 ### 2. Choose the design system
 
@@ -132,7 +135,8 @@ the brand sees it.
 
 ## Fallbacks
 
-**No design access, or DesignSync unavailable.** Prompt for `/design-consent` first. If still blocked, offer
+**No design access, or DesignSync unavailable.** You're here because the inline access prompt never
+appeared or was declined, so `/design-consent` is the next move. If still blocked, offer
 the baked-in Avista token set below and tell the user plainly that it's a local approximation and the logo
 will be missing — so they can decide whether to fix access before sending anything to a client.
 

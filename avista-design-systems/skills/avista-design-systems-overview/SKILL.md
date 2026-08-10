@@ -33,11 +33,13 @@ Measured on this org: `list_projects` returned one project, while the Avista Des
 
 ## Getting started
 
-1. Run **`/design-consent`** once if design reads aren't authorized yet (some builds call it
-   `/design-login`).
-2. **`/fetch-design-systems`** to see what's reachable. Anything listed under *known but not yet reachable*
+1. **`/fetch-design-systems`** to see what's reachable. Anything listed under *known but not yet reachable*
    needs a `claude.ai/design/p/<UUID>` share link — the UUID is the project id, and it gets saved.
-3. **`/brand-doc`** with your content. It'll ask which system if you haven't said.
+2. **`/brand-doc`** with your content. It'll ask which system if you haven't said.
+
+There's no setup step. If design access isn't granted yet, the first DesignSync call raises the prompt
+itself — approve it inline and carry on. `/design-consent` (or `/design-login` in some builds) is only the
+manual fallback for when that prompt never appears.
 
 ## Registry
 
@@ -52,6 +54,7 @@ login and environment — one of the seeded ids already 404s on the account it w
 
 ## Requirements
 
-- Design scope on the claude.ai login (`/design-consent`)
+- Design scope on the claude.ai login — granted inline on the first DesignSync read, no setup step;
+  `/design-consent` is the manual fallback
 - Google Chrome, Chromium, Edge or Brave for PDF rendering
 - Optional: `poppler` (`brew install poppler`) for `pdftotext`/`pdffonts` verification

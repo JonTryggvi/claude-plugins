@@ -34,11 +34,9 @@ Through the Avista marketplace:
 /plugin install avista-design-systems@avista
 ```
 
-Then authorize design reads once:
-
-```bash
-/design-consent
-```
+That's it — there's no authorization step to run first. The first DesignSync read raises the design-access
+prompt itself; approve it inline and carry on. If that prompt never appears, `/design-consent` (or
+`/design-login` in some builds) grants the scope manually.
 
 ## How branding works
 
@@ -71,6 +69,7 @@ with `get_project` before use.
 
 ## Requirements
 
-- Design scope on the claude.ai login (`/design-consent`, or `/design-login` in some builds)
+- Design scope on the claude.ai login — granted inline on the first DesignSync read; `/design-consent`
+  (or `/design-login`) is the manual fallback
 - Chrome, Chromium, Edge or Brave
 - Optional: `brew install poppler` for render verification
