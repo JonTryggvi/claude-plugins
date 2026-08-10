@@ -47,7 +47,7 @@ what it covers*; it just doesn't cover much. Anything it returns is writable by 
 
 Two files, with the live one winning:
 
-- **Live:** `~/.claude/avista-claude-design/design-systems.json` — survives plugin updates. Newly
+- **Live:** `~/.claude/avista-design-systems/design-systems.json` — survives plugin updates. Newly
   discovered systems get appended here.
 - **Seed:** `references/design-systems.json` in this skill — the shipped starting point. It is
   **overwritten on every plugin update**, so never write discoveries only there.

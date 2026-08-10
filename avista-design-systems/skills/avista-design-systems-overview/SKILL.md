@@ -1,9 +1,9 @@
 ---
-name: avista-claude-design-overview
-description: Overview of the avista-claude-design plugin — what it bundles, the list_projects blind spot it works around, and which skill to reach for. Use when the user asks "what does avista-claude-design do", "what's in this plugin", "how do I brand a report", "how do I get started", or right after installing the plugin.
+name: avista-design-systems-overview
+description: Overview of the avista-design-systems plugin — what it bundles, the list_projects blind spot it works around, and which skill to reach for. Use when the user asks "what does avista-design-systems do", "what's in this plugin", "how do I brand a report", "how do I get started", or right after installing the plugin.
 ---
 
-# avista-claude-design — overview
+# avista-design-systems — overview
 
 Two skills for getting the org's Claude Design design systems out of claude.ai and onto a client-ready
 document.
@@ -43,7 +43,7 @@ Measured on this org: `list_projects` returned one project, while the Avista Des
 
 Candidate ids live in two places, live winning over shipped:
 
-- `~/.claude/avista-claude-design/design-systems.json` — the live registry, survives plugin updates
+- `~/.claude/avista-design-systems/design-systems.json` — the live registry, survives plugin updates
 - `skills/fetch-design-systems/references/design-systems.json` — the shipped seed, **overwritten on every
   plugin update**
 

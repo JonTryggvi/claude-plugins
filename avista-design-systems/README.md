@@ -1,4 +1,4 @@
-# avista-claude-design
+# avista-design-systems
 
 Fetch the org's [Claude Design](https://claude.ai/design) design systems — **including the view-only ones**
 — and brand documents with them, rendered to a client-ready PDF.
@@ -24,14 +24,14 @@ id registry, a pasted share link, and an optional browser harvest — then confi
 |---|---|
 | `/fetch-design-systems` | List reachable design systems, resolve new ones from a share link, maintain the id registry. |
 | `/brand-doc` | Read a system's tokens + logo, build the document, render a print-ready PDF via headless Chrome. |
-| `/avista-claude-design-overview` | What's in the box and how the pieces fit. |
+| `/avista-design-systems-overview` | What's in the box and how the pieces fit. |
 
 ## Install
 
 Through the Avista marketplace:
 
 ```bash
-/plugin install avista-claude-design@avista
+/plugin install avista-design-systems@avista
 ```
 
 Then authorize design reads once:
@@ -63,7 +63,7 @@ Then authorize design reads once:
 
 | Path | Role |
 |---|---|
-| `~/.claude/avista-claude-design/design-systems.json` | Live registry — new ids are appended here, survives plugin updates |
+| `~/.claude/avista-design-systems/design-systems.json` | Live registry — new ids are appended here, survives plugin updates |
 | `skills/fetch-design-systems/references/design-systems.json` | Shipped seed — **overwritten on plugin update** |
 
 Registry entries are candidates, not facts: ids vary by login and environment, and every one is re-probed

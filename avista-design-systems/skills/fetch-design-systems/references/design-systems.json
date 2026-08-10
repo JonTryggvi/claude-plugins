@@ -7,7 +7,7 @@
     "response always wins.",
     "",
     "This shipped copy is overwritten whenever the plugin updates. The live registry lives at",
-    "~/.claude/avista-claude-design/design-systems.json and takes precedence — newly discovered systems are",
+    "~/.claude/avista-design-systems/design-systems.json and takes precedence — newly discovered systems are",
     "appended there so they survive `/plugin update`."
   ],
   "version": 1,
