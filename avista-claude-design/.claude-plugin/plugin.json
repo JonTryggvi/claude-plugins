@@ -1,0 +1,20 @@
+{
+  "name": "avista-claude-design",
+  "version": "0.1.0",
+  "description": "Fetch the org's Claude Design design systems — including the view-only ones that DesignSync's list_projects hides — and brand documents with them. Discovery is live: every run probes candidate project ids with get_project and lists only what actually resolves, so read-only systems shared by a teammate are usable by id even though they never appear in list_projects. Reads each system's own tokens and logo, then renders a client-ready PDF through headless Chrome so the system's web fonts are embedded properly.",
+  "author": {
+    "name": "Avista",
+    "url": "https://avista.is"
+  },
+  "homepage": "https://avista.is",
+  "keywords": [
+    "claude-design",
+    "design-system",
+    "design-tokens",
+    "branding",
+    "pdf",
+    "report",
+    "headless-chrome",
+    "avista"
+  ]
+}

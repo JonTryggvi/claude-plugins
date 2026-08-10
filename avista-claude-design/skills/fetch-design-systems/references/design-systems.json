@@ -1,0 +1,47 @@
+{
+  "$comment": [
+    "SEED registry of Claude Design project ids. This file is a CACHE OF CANDIDATES, not a source of truth.",
+    "Every entry must be re-confirmed at runtime with `DesignSync method:get_project projectId:<id>` before it is",
+    "offered to the user — ids are per-environment and per-login, and an id that resolves for one teammate can",
+    "404 for another. `access` and `tokenFile` are hints that save a round-trip; the live get_project/list_files",
+    "response always wins.",
+    "",
+    "This shipped copy is overwritten whenever the plugin updates. The live registry lives at",
+    "~/.claude/avista-claude-design/design-systems.json and takes precedence — newly discovered systems are",
+    "appended there so they survive `/plugin update`."
+  ],
+  "version": 1,
+  "systems": [
+    {
+      "name": "Avista Design System",
+      "projectId": "c2034ba4-cc06-412e-9cce-124ebd818404",
+      "access": "read-only",
+      "tokenFile": "colors_and_type.css",
+      "logo": "assets/avista_logo.svg",
+      "logoDark": "assets/avista_logo_dark.svg",
+      "verifiedAt": "2026-08-10",
+      "note": "The reason this plugin exists: absent from list_projects entirely, but get_project/list_files/get_file all work by id. get_project returns no canEdit field, which is how read-only presents."
+    },
+    {
+      "name": "RMK Design System",
+      "projectId": "ca3fda01-0c87-4d4e-b719-fc115e0387e1",
+      "access": "writable",
+      "tokenFile": "colors_and_type.css",
+      "logo": "assets/rmk-logo.png",
+      "verifiedAt": "2026-08-10",
+      "note": "get_project returns canEdit:true on jontryggvi@avista.is, and it is the only project list_projects returns for that login. Access differs per teammate — always re-read canEdit rather than trusting this field."
+    }
+  ],
+  "unresolved": [
+    {
+      "name": "Modernist",
+      "lastTriedId": "03f44d8a-8146-4293-8dc1-8807e6f1f385",
+      "reason": "get_project returned HTTP 404 not_found on jontryggvi@avista.is (2026-08-10). The id may belong to a different login or environment. Resolve with a fresh share link and promote into `systems`.",
+      "tokenFileHint": "styles.css"
+    },
+    { "name": "Sol & Drift Design System", "reason": "Seen in the claude.ai/design UI; project id not captured yet." },
+    { "name": "ÖRLÖ Design System", "reason": "Seen in the claude.ai/design UI; project id not captured yet." },
+    { "name": "Reykjavík Attractions Design System", "reason": "Seen in the claude.ai/design UI; project id not captured yet." },
+    { "name": "LHI Design System", "reason": "Seen in the claude.ai/design UI; project id not captured yet." }
+  ]
+}
