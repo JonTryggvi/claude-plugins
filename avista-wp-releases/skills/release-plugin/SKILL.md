@@ -103,7 +103,20 @@ Once the release is published, watch the Actions tab: `https://github.com/<owner
 Success criteria:
 
 - The workflow completes successfully (green check).
-- The release page (`/releases/tag/v<NEW_VERSION>`) shows `avista-<plugin>-release.zip` attached as an asset, sized roughly the same as previous releases (give or take a few hundred KB).
+- The release page (`/releases/tag/v<NEW_VERSION>`) shows the CI-built zip attached as an asset, sized roughly the same as previous releases (give or take a few hundred KB).
+
+  Which name to expect depends on when the plugin was scaffolded — **check the plugin's own bootstrap class rather than assuming**, since the asset must match the regex compiled into it:
+
+  ```bash
+  grep -n 'enableReleaseAssets' -B4 <main-plugin-file>.php
+  ```
+
+  | Scaffolded | Expected asset |
+  |---|---|
+  | Current (versioned) | `avista-<plugin>-v<NEW_VERSION>.zip` |
+  | Legacy (static) | `avista-<plugin>-release.zip` |
+
+  A mismatch between the attached asset and that regex means **no site will ever see this release** — `REQUIRE_RELEASE_ASSETS` fails closed and logs nothing. Treat it as a failed release, not a cosmetic difference.
 
 Once the release is confirmed, run `git fetch origin --tags --quiet` to pull the just-created `v<NEW_VERSION>` tag into the local repo. `gh release create` makes the tag on the remote only — without this, the local tag list stays a release behind and the next run's Step 2 check re-triggers the "was this version actually released?" detour.
 
@@ -117,7 +130,7 @@ If the workflow fails or no asset is attached, the release is not actually shipp
 
 Optional but worth offering: tell the user how to verify the update actually rolls out.
 
-- On any site with the plugin installed, go to **Plugins → Installed Plugins**. The plugin row should show an "Update available" link within ~12 hours of the release (PUC throttles its check to ~12h). To force an immediate check, click the **"Check for updates" link PUC adds under the plugin row** — it carries the nonce PUC requires. Don't tell users to hand-type a URL: PUC v5p6's trigger is `?puc_check_for_updates=1&puc_slug=<slug>` *plus* a `check_admin_referer` nonce (not the old `?wppuc_update_check=1`), so a typed URL just fails the nonce check.
+- On any site with the plugin installed, go to **Plugins → Installed Plugins**. The plugin row should show an "Update available" link within ~12 hours of the release (PUC throttles its check to ~12h). To force an immediate check, click the **"Check for updates" link PUC adds under the plugin row** — it carries the nonce PUC requires. Don't tell users to hand-type a URL: PUC v5's trigger is `?puc_check_for_updates=1&puc_slug=<slug>` *plus* a `check_admin_referer` nonce (not the old `?wppuc_update_check=1`), so a typed URL just fails the nonce check.
 - If the user wants to apply the update *now* (any site), the reliable path is force-installing the release zip — `gh release download … && wp plugin install <zip> --force`. See Step 8 for the full command. Note CLI `wp plugin update` is **not** dependable for GitHub-PUC plugins (PUC's CLI check is throttled and a forced check doesn't carry over to the update command). The admin "Update" button is also only best-effort — it can report "the plugin is at the latest version" even just after a check shows the update (see the Admin-UI note in Step 8 for the mechanism). The one *deterministic* path is `wp plugin install --force` (Step 8).
 
 ### Step 8 — Deploy to production (optional)

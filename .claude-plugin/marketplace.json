@@ -14,7 +14,7 @@
     {
       "name": "avista-wp-releases",
       "source": "./avista-wp-releases",
-      "description": "Avista's WordPress release pipeline for plugins and themes — onboard a developer's machine for multi-account GitHub (gh CLI + SSH), scaffold GitHub Releases + plugin-update-checker (PUC v5p6) auto-updates, and ship new versions through that pipeline."
+      "description": "Avista's WordPress release pipeline for plugins and themes — onboard a developer's machine for multi-account GitHub (gh CLI + SSH), scaffold GitHub Releases + plugin-update-checker (PUC v5) auto-updates, and ship new versions through that pipeline."
     },
     {
       "name": "avista-wp-prod-ops",

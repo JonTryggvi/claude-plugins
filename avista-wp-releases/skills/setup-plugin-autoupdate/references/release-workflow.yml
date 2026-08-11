@@ -50,6 +50,17 @@ jobs:
       - name: Install Composer Dependencies
         run: composer install --no-dev --optimize-autoloader --prefer-dist --no-interaction --no-progress
 
+      # The asset name is versioned: __RELEASE_ASSET_SLUG__-v<VER>.zip. Strip any
+      # leading `v` from the tag first so both `2.0.1` and `v2.0.1` produce the
+      # same, matchable asset name. The literal `v` in the name is load-bearing —
+      # the updater's regex requires it precisely so it can never match GitHub's
+      # auto-generated source archive (e.g. Avista-Core-2.0.0.zip), which ships
+      # no vendor/ and would brick the plugin on a one-click update.
+      - name: Resolve asset name
+        run: |
+          VER="${RELEASE_TAG#v}"
+          echo "ASSET=__RELEASE_ASSET_SLUG__-v${VER}.zip" >> "$GITHUB_ENV"
+
       - name: Prepare Plugin Artifact
         run: |
           mkdir -p build/__BUILD_DIR_NAME__
@@ -68,10 +79,27 @@ jobs:
             --exclude 'tests'
 
           cd build
-          zip -r ../__RELEASE_ZIP_BASE__.zip __BUILD_DIR_NAME__
+          zip -r "../${ASSET}" __BUILD_DIR_NAME__
+
+      # Fail the release rather than publish an asset that disables the updater on
+      # every site it reaches. A zip missing vendor/autoload.php installs fine and
+      # then silently never checks for updates again — CI is far cheaper than
+      # discovering that in the field.
+      - name: Verify artifact is installable
+        run: |
+          for required in \
+            __BUILD_DIR_NAME__/__MAIN_PLUGIN_FILE__ \
+            __BUILD_DIR_NAME__/vendor/autoload.php
+          do
+            if ! unzip -l "${ASSET}" | grep -q "  ${required}$"; then
+              echo "ERROR: ${required} missing from ${ASSET}"
+              exit 1
+            fi
+          done
+          echo "OK: ${ASSET} contains the plugin entrypoint and the Composer autoloader."
 
       - name: Upload Zip to Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release upload "${RELEASE_TAG}" __RELEASE_ZIP_BASE__.zip --clobber
+          gh release upload "${RELEASE_TAG}" "${ASSET}" --clobber

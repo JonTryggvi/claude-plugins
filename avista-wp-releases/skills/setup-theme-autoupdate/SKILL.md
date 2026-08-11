@@ -1,6 +1,6 @@
 ---
 name: setup-theme-autoupdate
-description: Wire GitHub Releases + plugin-update-checker (PUC v5p6) into an Avista WordPress theme so installs receive one-click updates from tagged releases. Use when the user says "set up theme auto-updates", "wire up PUC for this theme", "scaffold the theme autoupdater", "add the theme release workflow", "make this theme auto-update", or when adding GitHub-Release-based updates to a WordPress theme. Do not use for WordPress plugins — those have their own skill (setup-plugin-autoupdate) with different version sources and PUC arguments.
+description: Wire GitHub Releases + plugin-update-checker (PUC v5) into an Avista WordPress theme so installs receive one-click updates from tagged releases. Use when the user says "set up theme auto-updates", "wire up PUC for this theme", "scaffold the theme autoupdater", "add the theme release workflow", "make this theme auto-update", or when adding GitHub-Release-based updates to a WordPress theme. Do not use for WordPress plugins — those have their own skill (setup-plugin-autoupdate) with different version sources and PUC arguments.
 ---
 
 # Set up the theme auto-update pipeline
@@ -93,7 +93,7 @@ Report files created and the manual next steps:
 
 1. Run `composer install` locally so PUC resolves during dev.
 2. Optionally add `define( 'GITHUB_TOKEN', 'ghp_...' );` to `wp-config.php` for the rate-limit raise (60 → 5000 req/hr).
-3. The user runs `gsend "Add GitHub-Release auto-updater (PUC v5p6)"` to commit and push.
+3. The user runs `gsend "Add GitHub-Release auto-updater (PUC v5)"` to commit and push. Workflow files must be committed over git-over-SSH — writing `.github/workflows/` through the GitHub REST contents API needs the `workflow` token scope, which the Avista org account lacks, and the API returns a misleading `404` rather than a `403`.
 4. Create the first release: `gh release create v0.1.0 --title "v0.1.0" --notes "Initial release with auto-updater wired"`. Actions builds the zip and attaches it as `__THEME_SLUG__.zip`.
 
 Mention the `release-theme` skill for shipping subsequent versions.

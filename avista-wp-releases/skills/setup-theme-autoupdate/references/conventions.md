@@ -6,8 +6,9 @@ Most of the standing conventions are shared with the plugin scaffold. This doc f
 
 These conventions apply identically to themes. See the plugin skill's `conventions.md` for the long-form reasoning behind each:
 
+- **Never hardcode a `v5pN` PUC namespace** — the single highest-value rule. `^5.6` floats (it resolves to `v5p7` today), so a pinned `v5p6` reference stops resolving on the next minor. Use the `v5` alias for the factory, and resolve `REQUIRE_RELEASE_ASSETS` off `get_class( $vcs_api )` — that constant lives only on the concrete `v5pN\Vcs\Api` and there is **no** `v5\Vcs\Api`. In the theme scaffold this bites harder than in the plugin one: the factory guard passes on the alias, so execution reaches the constant and dies with a hard `Error: Class "…\v5p6\Vcs\Api" not found` on every request — a white screen, not a silent no-op.
 - **`file_exists()` around `vendor/autoload.php`** — `vendor/` is git-ignored and built by Actions; the guard lets the theme load cleanly without the autoloader.
-- **`class_exists(PucFactory::class)` after autoload** — defends against partial composer installs.
+- **`class_exists()` on the factory after autoload** — defends against partial composer installs.
 - **`method_exists()` around `getVcsApi()` and `enableReleaseAssets()`** — future-proofs against PUC API changes between minor versions.
 - **`REQUIRE_RELEASE_ASSETS` + specific zip regex** — prevents PUC from grabbing GitHub's auto-generated source archive, which would brick the theme by not including `vendor/`.
 - **`BOOT_FLAG` constant guard** — defends against double-initialization. Critical for themes because a child theme can also load the parent's `functions.php`, which would otherwise register two PUC checkers racing against the same option keys.
@@ -22,13 +23,15 @@ WordPress reads a theme's metadata from `style.css`. The `Version:` line there i
 
 PUC's `buildUpdateChecker()` second argument needs the file whose plugin/theme header WP scans for the version. For plugins it's the main plugin file. For themes it's `get_stylesheet_directory() . '/functions.php'` — *not* because `functions.php` has the version, but because PUC needs a path to derive the theme's slug from, and WP's theme system points it at `functions.php` while reading the actual version metadata from the parallel `style.css`. This is a PUC convention — don't second-guess it.
 
-### Release zip naming: `{theme-slug}.zip` (no `-release` suffix)
+### Release zip naming: `{theme-slug}.zip` (unversioned)
 
-Plugin convention: `avista-<plugin>-release.zip`. Theme convention: `<theme-slug>.zip`.
+Plugin convention: `avista-<plugin>-v<VER>.zip` (versioned). Theme convention: `<theme-slug>.zip`.
 
-The asymmetry exists because themes are typically installed by their slug being the same as the zip basename (WP's "Add New Theme → Upload" reads the directory name from inside the zip and matches it against existing themes). A `-release` suffix in the zip name would confuse some upload UIs. Keep theme zips plain.
+The asymmetry exists because themes are typically installed by their slug being the same as the zip basename (WP's "Add New Theme → Upload" reads the directory name from inside the zip and matches it against existing themes). A suffix in the zip name would confuse some upload UIs. Keep theme zips plain.
 
 The regex in the PUC config follows the zip name: `/<theme-slug>\.zip($|[?&#])/i`.
+
+**This static name is safe here, unlike a permissive plugin regex.** GitHub's auto-generated source archive is `<Repo>-<version>.zip` (e.g. `Islandiamagica-1.4.0.zip`), and the anchored `\.zip` immediately after the slug means it cannot match — there is no version segment for it to slip into. Do not "improve" this into `/<theme-slug>-v?[\d.]+\.zip/i`; the `v?` would match GitHub's archive, which ships no `vendor/` and would brick the theme on a one-click update.
 
 ### No brand-icon injection
 

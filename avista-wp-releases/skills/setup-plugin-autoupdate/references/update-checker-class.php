@@ -49,11 +49,16 @@ final class __PLUGIN_PASCAL___Update_Checker {
 
         require_once $autoload;
 
-        if ( ! class_exists( \YahnisElsts\PluginUpdateChecker\v5p6\PucFactory::class ) ) {
+        // PUC ships a version-pinned namespace per release (v5p6, v5p7, …) plus a
+        // stable `v5` alias. The Composer constraint `^5.6` floats, so a hardcoded
+        // v5pN namespace silently stops resolving on the next minor. Always use
+        // the alias. See conventions.md → "Never hardcode a v5pN namespace".
+        $factory = '\\YahnisElsts\\PluginUpdateChecker\\v5\\PucFactory';
+        if ( ! class_exists( $factory ) ) {
             return;
         }
 
-        $checker = \YahnisElsts\PluginUpdateChecker\v5p6\PucFactory::buildUpdateChecker(
+        $checker = $factory::buildUpdateChecker(
             self::REPO_URL,
             __PLUGIN_CONST___FILE,
             __PLUGIN_CONST___SLUG,
@@ -70,12 +75,25 @@ final class __PLUGIN_PASCAL___Update_Checker {
         }
 
         if ( method_exists( $checker, 'getVcsApi' ) ) {
-            $vcs = $checker->getVcsApi();
-            if ( is_object( $vcs ) && method_exists( $vcs, 'enableReleaseAssets' ) ) {
-                $vcs->enableReleaseAssets(
-                    '/__RELEASE_ZIP_BASE__\.zip($|[?&#])/i',
-                    \YahnisElsts\PluginUpdateChecker\v5p6\Vcs\Api::REQUIRE_RELEASE_ASSETS
-                );
+            $api = $checker->getVcsApi();
+            if ( is_object( $api ) && method_exists( $api, 'enableReleaseAssets' ) ) {
+                // Match only our CI-built, versioned asset. The literal `v` is
+                // load-bearing: GitHub's auto-generated source archive for repo
+                // `Avista-Core` at tag 2.0.0 is `Avista-Core-2.0.0.zip`, which a
+                // permissive `v?` would match — and it ships no vendor/, so an
+                // update from it bricks the plugin.
+                $name_regex = '/__RELEASE_ASSET_SLUG__-v[\d.]+\.zip($|[?&#])/i';
+
+                // Resolve REQUIRE_RELEASE_ASSETS off the *runtime* class. The
+                // constant lives on the concrete v5pN\Vcs\Api and is NOT exposed
+                // through the `v5` alias, so it cannot be referenced statically
+                // without re-pinning the namespace we just stopped pinning.
+                $api_class = get_class( $api );
+                if ( defined( "$api_class::REQUIRE_RELEASE_ASSETS" ) ) {
+                    $api->enableReleaseAssets( $name_regex, constant( "$api_class::REQUIRE_RELEASE_ASSETS" ) );
+                } else {
+                    $api->enableReleaseAssets( $name_regex );
+                }
             }
         }
 

@@ -10,8 +10,12 @@
  * that any init-time setups have already run.
  */
 
+// Only the version-agnostic `v5` alias may be imported. PUC's per-release
+// namespace (v5p6, v5p7, …) floats under the `^5.6` Composer constraint, and
+// `v5\Vcs\Api` does not exist at all — the REQUIRE_RELEASE_ASSETS constant is
+// resolved off the runtime class below instead. See the plugin skill's
+// conventions.md → "Never hardcode a v5pN namespace".
 use YahnisElsts\PluginUpdateChecker\v5\PucFactory;
-use YahnisElsts\PluginUpdateChecker\v5p6\Vcs\Api as PucVcsApi;
 
 final class __THEME_PASCAL___Theme_UpdateChecker {
     private const REPO_URL   = 'https://github.com/__GH_OWNER__/__GH_REPO__/';
@@ -50,10 +54,16 @@ final class __THEME_PASCAL___Theme_UpdateChecker {
         if ( method_exists( $checker, 'getVcsApi' ) ) {
             $vcs_api = $checker->getVcsApi();
             if ( is_object( $vcs_api ) && method_exists( $vcs_api, 'enableReleaseAssets' ) ) {
-                $vcs_api->enableReleaseAssets(
-                    '/__THEME_SLUG__\.zip($|[?&#])/i',
-                    PucVcsApi::REQUIRE_RELEASE_ASSETS
-                );
+                $name_regex = '/__THEME_SLUG__\.zip($|[?&#])/i';
+
+                // Resolve the flag off the *runtime* class — it lives on the
+                // concrete v5pN\Vcs\Api, which the `v5` alias does not cover.
+                $api_class = get_class( $vcs_api );
+                if ( defined( "$api_class::REQUIRE_RELEASE_ASSETS" ) ) {
+                    $vcs_api->enableReleaseAssets( $name_regex, constant( "$api_class::REQUIRE_RELEASE_ASSETS" ) );
+                } else {
+                    $vcs_api->enableReleaseAssets( $name_regex );
+                }
             }
         }
     }

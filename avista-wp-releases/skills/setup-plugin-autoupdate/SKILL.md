@@ -1,6 +1,6 @@
 ---
 name: setup-plugin-autoupdate
-description: Wire GitHub Releases + plugin-update-checker (PUC v5p6) into an Avista WordPress plugin so installs receive one-click updates from tagged releases. Use when the user says "set up auto-updates", "wire up PUC", "scaffold the autoupdater", "add the release workflow", "make this plugin auto-update", "give this plugin the regluvordur release pipeline", or when adding GitHub-Release-based updates to a new WordPress plugin. Do not use for theme update workflows or for plugins that update through the WordPress.org repository.
+description: Wire GitHub Releases + plugin-update-checker (PUC v5) into an Avista WordPress plugin so installs receive one-click updates from tagged releases. Use when the user says "set up auto-updates", "wire up PUC", "scaffold the autoupdater", "add the release workflow", "make this plugin auto-update", "give this plugin the regluvordur release pipeline", or when adding GitHub-Release-based updates to a new WordPress plugin. Do not use for theme update workflows or for plugins that update through the WordPress.org repository.
 ---
 
 # Set up the auto-update pipeline
@@ -48,7 +48,8 @@ From the plugin's existing header, slug, and remote, derive each value below. Sh
 | `__GH_REPO__` | GitHub repository name | `Avista-MyPlugin` |
 | `__PLUGIN_SLUG__` | WP slug used by `plugin_basename()` (often matches `__GH_REPO__`) | `Avista-MyPlugin` |
 | `__PLUGIN_TITLE__` | Human-readable plugin name (from the plugin header) | `Avista MyPlugin` |
-| `__RELEASE_ZIP_BASE__` | Basename of the release asset, no `.zip` | `avista-myplugin-release` |
+| `__RELEASE_ASSET_SLUG__` | Slug the versioned asset is built from. The asset itself is `<slug>-v<VER>.zip` — do **not** include a version or a `-release` suffix here | `avista-myplugin` |
+| `__MAIN_PLUGIN_FILE__` | Filename (not path) of the main plugin file, used by the workflow's installability assertion | `avista-myplugin.php` |
 | `__BUILD_DIR_NAME__` | Top-level folder inside the release zip — must equal the folder the plugin is **installed** under (`dirname(plugin_basename())`), which is NOT necessarily your dev checkout's folder | `avista-myplugin` |
 
 Heuristics:
@@ -56,8 +57,11 @@ Heuristics:
 - `__PLUGIN_PASCAL__` should match any class prefix the plugin already uses (search the codebase). If the plugin is fresh, derive it from the plugin name in PascalCase with underscores.
 - `__PLUGIN_CONST__` is `__PLUGIN_PASCAL__` uppercased with underscores preserved. If the plugin already defines constants with another prefix, use that prefix instead.
 - `__GH_OWNER__` and `__GH_REPO__` come from the git remote URL.
-- `__RELEASE_ZIP_BASE__` should be lowercase-kebab and include `-release` so it's distinguishable from any other zips the user might attach manually. `avista-<plugin>-release` is the established convention.
-- `__BUILD_DIR_NAME__` is the folder the plugin lives in **when installed** (e.g. `avista-myplugin`) — this is what determines where the zip unpacks. It is NOT always your local checkout's folder name: a repo cloned as `myplugin/` may be installed on production as `avista-myplugin/`. Get the real value from an installed site — the directory portion of the `active_plugins` entry, i.e. `dirname(plugin_basename(__FILE__))` — and make it match `__RELEASE_ZIP_BASE__` minus the `-release` suffix. **Why it matters:** if it mismatches the install folder, PUC's *admin* update still self-corrects (`UpdateChecker::fixDirectoryName` renames the extracted dir to the live folder during an update), but `wp plugin install <zip> --force` honours the zip's folder name and will unpack a *second, stray* copy under the wrong name instead of upgrading in place.
+- `__RELEASE_ASSET_SLUG__` should be lowercase-kebab, and normally equals `__BUILD_DIR_NAME__`. The release asset is **versioned** — `<slug>-v<VER>.zip`, e.g. `avista-myplugin-v1.4.18.zip` — so the slug carries no version and no `-release` suffix. Versioned naming is what `~/.claude/CLAUDE.md` documents, it matches `Avista/Avista-Commerce-MyAccount`, and it makes the releases list self-describing.
+- `__MAIN_PLUGIN_FILE__` is just the filename of the main plugin file (`avista-myplugin.php`), not a path and not the WP slug — `__PLUGIN_SLUG__` is often PascalCase (`Avista-MyPlugin`) and would not match the real filename.
+- `__BUILD_DIR_NAME__` is the folder the plugin lives in **when installed** (e.g. `avista-myplugin`) — this is what determines where the zip unpacks. It is NOT always your local checkout's folder name: a repo cloned as `myplugin/` may be installed on production as `avista-myplugin/`. Get the real value from an installed site — the directory portion of the `active_plugins` entry, i.e. `dirname(plugin_basename(__FILE__))`. **Why it matters:** if it mismatches the install folder, PUC's *admin* update still self-corrects (`UpdateChecker::fixDirectoryName` renames the extracted dir to the live folder during an update), but `wp plugin install <zip> --force` honours the zip's folder name and will unpack a *second, stray* copy under the wrong name instead of upgrading in place.
+
+**If the plugin already ships releases under the old static name** (`avista-<plugin>-release.zip`), do not just switch it: `REQUIRE_RELEASE_ASSETS` fails closed against the regex compiled into the *installed* version, so existing sites would silently stop seeing updates. See `references/conventions.md` → "Fail closed cuts both ways" for the dual-upload migration.
 
 ### Step 3 — Confirm
 
@@ -73,7 +77,9 @@ Once confirmed:
 
 2. **Workflow YAML.** Read `references/release-workflow.yml`, substitute placeholders, and write to `.github/workflows/release.yml`. Create the `.github/workflows/` directory if needed.
 
-3. **Composer dependency.** Open the plugin's `composer.json` (create one if missing) and add `"yahnis-elsts/plugin-update-checker": "^5.6"` under `require`. If creating from scratch, use a minimal manifest:
+   **Do not write this file through the GitHub REST contents API.** That path requires the `workflow` token scope; the Avista org account (`jontryggviAvista`) has `repo` but not `workflow`, and the API rejects the write with a misleading **`404`** rather than a `403`. Commit workflow files over git-over-SSH. If you see a 404 writing to `.github/workflows/` on a repo you can otherwise write to, it's the token scope, not the path.
+
+3. **Composer dependency.** Open the plugin's `composer.json` (create one if missing) and add `"yahnis-elsts/plugin-update-checker": "^5.6"` under `require`. This constraint deliberately floats across minors, which is exactly why the bootstrap class must not pin a `v5pN` namespace. If creating from scratch, use a minimal manifest:
 
    ```json
    {
@@ -112,15 +118,25 @@ After writing, report to the user:
   1. Run `composer install` locally so the bootstrap class can find `vendor/autoload.php` during dev.
   2. Add brand assets if desired (`assets/img/icon.svg`, `assets/img/banner.svg`) — the bootstrap class references these but degrades gracefully if missing.
   3. Optionally add `define( 'GITHUB_TOKEN', 'ghp_...' );` to `wp-config.php` to raise the GitHub API rate limit from 60 to 5000 requests/hour for the update checks.
-  4. Commit the changes (the user runs `gsend "Add GitHub-Release auto-updater (PUC v5p6)"`).
+  4. Commit the changes (the user runs `gsend "Add GitHub-Release auto-updater (PUC v5)"`). Workflow files must go over git-over-SSH, not the REST contents API — see Step 4.2.
   5. Push to `main`.
-  6. Create the first release: `gh release create v0.1.0 --title "v0.1.0" --notes "Initial release with auto-updater wired"` (or via the GitHub web UI). Once the release is published, the workflow builds the zip and attaches it as `__RELEASE_ZIP_BASE__.zip`.
+  6. Create the first release: `gh release create v0.1.0 --title "v0.1.0" --notes "Initial release with auto-updater wired"` (or via the GitHub web UI). Once the release is published, the workflow builds the zip, asserts it contains both the plugin entrypoint and `vendor/autoload.php`, and attaches it as `__RELEASE_ASSET_SLUG__-v0.1.0.zip`.
+
+Then confirm the updater actually registered — this pipeline's characteristic failure is being wired up wrong and saying nothing at all. On an installed site:
+
+```bash
+wp eval 'var_dump( class_exists( "\\YahnisElsts\\PluginUpdateChecker\\v5\\PucFactory" ) );'
+```
+
+If that prints `false`, `vendor/` never made it onto the site. If it prints `true` but no update is ever offered, check the asset name on the release against the regex in the bootstrap class — a mismatch fails closed and is silent by design.
 
 Mention the `release-plugin` skill for shipping subsequent versions.
 
 ## Conventions
 
 The bootstrap class encodes several non-obvious guards. Each exists for a specific reason — do not strip them when adapting the template. See `references/conventions.md` for the full list with the reasoning behind each one.
+
+**The one rule to not get wrong:** never hardcode a `v5pN` PUC namespace. The Composer constraint `^5.6` floats — it resolves to `v5p7` today — so a pinned `v5p6` reference stops resolving on the next minor. Use the `v5` alias for the factory, and resolve `REQUIRE_RELEASE_ASSETS` off `get_class( $api )` because that constant is not exposed through the alias. Getting the factory wrong disables updates **silently**; getting the constant wrong is a **fatal error**. Both are in `references/conventions.md` → "Never hardcode a `v5pN` namespace".
 
 ## Templates bundled
 

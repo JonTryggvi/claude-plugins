@@ -5,9 +5,9 @@ Avista's WordPress release pipeline for plugins *and* themes, packaged as a Clau
 | Skill | What it does |
 |---|---|
 | `setup-dev-machine` | Sets up a new Avista dev Mac end-to-end — base tooling (Homebrew, gh, git), shell config (`~/.zprofile` + `~/.zshrc` + `~/.zsh` team functions), SSH keys, gh multi-account auth, and git identity. A plain-language, hand-holding guide. Run once per machine; it's the prerequisite for the release skills. |
-| `setup-plugin-autoupdate` | Wires GitHub Releases + plugin-update-checker (PUC v5p6) into a new WordPress plugin. Drops in the bootstrap class, the Actions workflow, the Composer dependency, and the conventions. |
+| `setup-plugin-autoupdate` | Wires GitHub Releases + plugin-update-checker (PUC v5) into a new WordPress plugin. Drops in the bootstrap class, the Actions workflow, the Composer dependency, and the conventions. |
 | `setup-theme-autoupdate` | Same pipeline for a WordPress theme. Different version source (`style.css`), different PUC arguments (`get_stylesheet_directory()`), different release zip naming (`<theme-slug>.zip`), no brand-icon injection. |
-| `release-plugin` | Ships a new version of a plugin that already has the pipeline wired up. Bumps the header version in the main plugin file, prepares the `gsend` commit, walks through creating the GitHub release, verifies the workflow attached `<plugin>-release.zip`. |
+| `release-plugin` | Ships a new version of a plugin that already has the pipeline wired up. Bumps the header version in the main plugin file, prepares the `gsend` commit, walks through creating the GitHub release, verifies the workflow attached `<plugin>-v<VER>.zip`. |
 | `release-theme` | Ships a new version of a theme. Bumps `style.css`, prepares the `gsend` commit, walks through the release, verifies `<theme-slug>.zip` was attached. |
 
 Plus an `avista-wp-releases-overview` skill — run `/avista-wp-releases-overview` (or just ask "what does this plugin do?") to print this summary, the recommended order, and prerequisites in-session.
@@ -18,7 +18,8 @@ Avista ships WordPress plugins and themes to Icelandic clients through a consist
 
 ## Conventions baked in
 
-- PUC version pinned to `v5p6` — bump together with the Composer dependency when upgrading.
+- PUC referenced through the version-agnostic `v5` namespace alias — **never** a pinned `v5pN`. The Composer constraint `^5.6` floats across minors (it resolves to `v5p7` today), so a hardcoded `v5p6` silently stops resolving and disables the updater with no error. `REQUIRE_RELEASE_ASSETS` is resolved off `get_class( $api )` because that constant exists only on the concrete `v5pN\Vcs\Api`, not on the alias.
+- Release artifact asserted installable in CI (contains the entrypoint **and** `vendor/autoload.php`) before it is uploaded — a zip missing the autoloader permanently disables the updater on every site it reaches.
 - Bootstrap class guards `vendor/autoload.php` with `file_exists()` and PUC usage with `class_exists`/`method_exists` so the plugin or theme loads cleanly in dev without `composer install`.
 - Release zip matched by a specific regex so PUC ignores GitHub's auto-generated source archives and only picks up the CI-built artifact.
 - `vendor/` is git-ignored; only ever compiled by Actions at release time.
@@ -32,7 +33,7 @@ Avista ships WordPress plugins and themes to Icelandic clients through a consist
 |---|---|---|
 | Version source | Plugin header (`Version:` in main `.php` file) | `style.css` header |
 | PUC `buildUpdateChecker` 2nd arg | `__FILE__` (main plugin file) | `get_stylesheet_directory() . '/functions.php'` |
-| Release zip name | `<plugin-slug>-release.zip` | `<theme-slug>.zip` |
+| Release zip name | `<plugin-slug>-v<VER>.zip` (versioned) | `<theme-slug>.zip` (unversioned) |
 | Workflow file | `.github/workflows/release.yml` | `.github/workflows/release-theme.yml` |
 | Upload mechanism | `gh release upload --clobber` | `softprops/action-gh-release@v2` |
 | Brand icon injection | Yes (icons + banners) | No (uses `screenshot.png`) |
