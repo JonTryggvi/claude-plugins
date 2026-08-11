@@ -1,60 +1,105 @@
 ---
 name: avista-design-systems-overview
-description: Overview of the avista-design-systems plugin — what it bundles, the list_projects blind spot it works around, and which skill to reach for. Use when the user asks "what does avista-design-systems do", "what's in this plugin", "how do I brand a report", "how do I get started", or right after installing the plugin.
+description: Overview of the avista-design-systems plugin — what it bundles and which skill to reach for. Use when the user asks "what does avista-design-systems do", "what's in this plugin", "how do I brand a report", "how do I get started", or right after installing the plugin.
 ---
 
 # avista-design-systems — overview
 
-Two skills for getting the org's Claude Design design systems out of claude.ai and onto a client-ready
-document.
-
-## The blind spot it works around
-
-`DesignSync method:list_projects` **returns writable projects only** — its own documentation says
-*"Filtered to writable projects only."*
-
-Most org design systems are owned by a teammate and shared **view-only**, so they never appear there. The
-symptom is misleading: you get a short, confident list that omits the system the user is looking straight at
-in their browser, and it reads as "that system doesn't exist" rather than "I looked in the wrong place".
-
-The workaround is that **all DesignSync read methods work on any accessible project when addressed directly
-by `projectId`** — `get_project`, `list_files` and `get_file` don't care that `list_projects` skipped it.
-So this plugin keeps a registry of ids, verifies them live, and never treats `list_projects` as the answer.
-
-Measured on this org: `list_projects` returned one project, while the Avista Design System — invisible to it
-— returned a full valid project and 70+ files when addressed by id.
+Two skills for getting the org's Claude Design design systems onto a client-ready document.
 
 ## What's in the box
 
 | Skill | What it does | When to use it |
 |---|---|---|
-| `fetch-design-systems` | Builds the list of reachable design systems from four sources (writable projects, a local id registry, a pasted share link, optional browser harvest), confirms each with `get_project`, and records new ids so the next run is instant. | "What design systems do I have?" · "Why can't you see the ÖRLÖ system?" · registering a new share link. |
-| `brand-doc` | Picks a system, reads its real tokens and logo, writes the document as Markdown + self-contained HTML, and renders a PDF through headless Chrome so the system's webfont embeds properly. | "Brand this report" · "Make a client-facing PDF" · "Style this like RMK". |
+| `fetch-design-systems` | Lists the design systems the login can reach, confirms each with `get_project`, and resolves any that don't enumerate. | "What design systems do I have?" · "Is the ÖRLÖ system available?" |
+| `brand-doc` | Reads a system's real tokens and logo, writes the document as Markdown + self-contained HTML, and renders a PDF through headless Chrome so the system's webfont embeds properly. | "Brand this report" · "Make a client-facing PDF" · "Style this like RMK". |
 
 ## Getting started
 
-1. **`/fetch-design-systems`** to see what's reachable. Anything listed under *known but not yet reachable*
-   needs a `claude.ai/design/p/<UUID>` share link — the UUID is the project id, and it gets saved.
+1. **`/fetch-design-systems`** to see what's reachable.
 2. **`/brand-doc`** with your content. It'll ask which system if you haven't said.
 
 There's no setup step. If design access isn't granted yet, the first DesignSync call raises the prompt
 itself — approve it inline and carry on. `/design-consent` (or `/design-login` in some builds) is only the
 manual fallback for when that prompt never appears.
 
-## Registry
+## How to actually use it
 
-Candidate ids live in two places, live winning over shipped:
+You don't need the slash commands — plain requests trigger the skills. Both forms work.
 
-- `~/.claude/avista-design-systems/design-systems.json` — the live registry, survives plugin updates
-- `skills/fetch-design-systems/references/design-systems.json` — the shipped seed, **overwritten on every
-  plugin update**
+**See what's available**
 
-Entries are hints, not facts. Every id is re-confirmed with `get_project` before use, because ids differ by
-login and environment — one of the seeded ids already 404s on the account it was captured from.
+```
+/fetch-design-systems
+```
+> Lists each system with writable/read-only status. Start here if you don't know what exists.
+
+**Brand something you already have**
+
+```
+Brand production-notes/rmk-audit.md in the RMK design system
+```
+> Names the system, so it skips the picker. Reads RMK's tokens and logo, builds the HTML, renders the PDF,
+> verifies the font embedded.
+
+**Brand something without naming a system**
+
+```
+Turn these notes into a client-facing PDF report
+```
+> Lists the systems and asks which one, then proceeds as above.
+
+**Point it at loose content**
+
+```
+Make a branded one-pager from the findings in this conversation — use Avista Core
+```
+> Content doesn't have to be a file. It writes the Markdown source first, then renders from that, so you can
+> edit wording later without touching CSS.
+
+**What you get back**
+
+```
+production-notes/RMK-Performance-Audit-2026-08-11.pdf   ← the deliverable
+production-notes/RMK-Performance-Audit-2026-08-11.md    ← editable source
+```
+
+Filename is `<Client>-<DocType>-<YYYY-MM-DD>`. Say so up front if you want a different directory.
+
+**Add a system that doesn't show up**
+
+```
+Add this design system: https://claude.ai/design/p/0632251e-f4fd-4411-8251-3f673d9f0471
+```
+> Confirms the id, detects its token layout and logo, and records it so the whole team gets it.
+
+## Two things that bite
+
+**`list_projects` is filtered to writable projects only.** A system shared *view-only* never enumerates, and
+the failure is quiet — a short, confident list that omits the system the user is looking straight at. Access
+and enumeration are separate: every read method works on such a system when addressed directly by
+`projectId`. There's no API that lists them, so the id comes from a share link
+(`claude.ai/design/p/<UUID>`) and gets recorded in `references/design-systems.json`, which ships with the
+plugin so nobody resolves it twice.
+
+**Token files are laid out two different ways.** Some systems put everything in one file
+(`colors_and_type.css`); others use an *import barrel* where `styles.css` is nothing but `@import` lines and
+the real values live in `tokens/*.css`. Parsing the entry file alone on the second kind yields zero tokens
+and a silently unbranded document. `brand-doc` follows the import chain — a `tokens/` directory in
+`list_files` is the tell.
+
+## Known systems
+
+Three, all verified and recorded in the registry:
+
+| System | Layout | Notes |
+|---|---|---|
+| Avista Design System | single-file | Editorial. Manrope + JetBrains Mono, accent one-per-viewport |
+| Avista Core Design System | import barrel | Product/admin, full component library, WordPress-compatible |
+| RMK Design System | single-file | Raster logo — won't recolour |
 
 ## Requirements
 
-- Design scope on the claude.ai login — granted inline on the first DesignSync read, no setup step;
-  `/design-consent` is the manual fallback
-- Google Chrome, Chromium, Edge or Brave for PDF rendering
+- Design scope on the claude.ai login — granted inline on the first DesignSync read
+- Chrome, Chromium, Edge or Brave for PDF rendering
 - Optional: `poppler` (`brew install poppler`) for `pdftotext`/`pdffonts` verification

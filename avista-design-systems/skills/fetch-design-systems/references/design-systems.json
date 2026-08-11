@@ -1,47 +1,48 @@
 {
   "$comment": [
-    "SEED registry of Claude Design project ids. This file is a CACHE OF CANDIDATES, not a source of truth.",
-    "Every entry must be re-confirmed at runtime with `DesignSync method:get_project projectId:<id>` before it is",
-    "offered to the user — ids are per-environment and per-login, and an id that resolves for one teammate can",
-    "404 for another. `access` and `tokenFile` are hints that save a round-trip; the live get_project/list_files",
-    "response always wins.",
+    "Known Claude Design project ids. This is a convenience cache, not a source of truth — `list_projects`",
+    "is the primary discovery path and covers everything the login can write to. This file exists for the",
+    "case `list_projects` cannot cover: a system shared view-only, which never enumerates but is fully",
+    "readable when addressed by projectId.",
     "",
-    "This shipped copy is overwritten whenever the plugin updates. The live registry lives at",
-    "~/.claude/avista-design-systems/design-systems.json and takes precedence — newly discovered systems are",
-    "appended there so they survive `/plugin update`."
+    "Confirm any entry with `get_project` before use — ids are per-environment and per-login, and `access`",
+    "and `tokenFile` are hints that save a round-trip, not guarantees. The live response always wins.",
+    "",
+    "Resolved a new id from a share link? Add it here and ship it, so nobody on the team resolves it twice."
   ],
-  "version": 1,
+  "version": 2,
   "systems": [
     {
       "name": "Avista Design System",
       "projectId": "c2034ba4-cc06-412e-9cce-124ebd818404",
-      "access": "read-only",
+      "access": "writable",
+      "tokenLayout": "single-file",
       "tokenFile": "colors_and_type.css",
       "logo": "assets/avista_logo.svg",
       "logoDark": "assets/avista_logo_dark.svg",
-      "verifiedAt": "2026-08-10",
-      "note": "The reason this plugin exists: absent from list_projects entirely, but get_project/list_files/get_file all work by id. get_project returns no canEdit field, which is how read-only presents."
+      "verifiedAt": "2026-08-11",
+      "note": "Editorial/marketing system. Manrope 200–800 + JetBrains Mono. Accent #D90429, one per viewport max. Radii cap at 8px."
+    },
+    {
+      "name": "Avista Core Design System",
+      "projectId": "0632251e-f4fd-4411-8251-3f673d9f0471",
+      "access": "writable",
+      "tokenLayout": "import-barrel",
+      "tokenFile": "styles.css",
+      "tokenDir": "tokens/",
+      "logo": "guidelines/wordmark.html",
+      "verifiedAt": "2026-08-11",
+      "note": "Product/admin system — full component library, WordPress-admin compatible. styles.css is ONLY @import lines; real values live in tokens/{colors,fonts,typography,spacing,radius,elevation,motion}.css. Public Sans + IBM Plex Mono. No assets/*logo* — the mark is in guidelines/wordmark.html."
     },
     {
       "name": "RMK Design System",
       "projectId": "ca3fda01-0c87-4d4e-b719-fc115e0387e1",
       "access": "writable",
+      "tokenLayout": "single-file",
       "tokenFile": "colors_and_type.css",
       "logo": "assets/rmk-logo.png",
-      "verifiedAt": "2026-08-10",
-      "note": "get_project returns canEdit:true on jontryggvi@avista.is, and it is the only project list_projects returns for that login. Access differs per teammate — always re-read canEdit rather than trusting this field."
+      "verifiedAt": "2026-08-11",
+      "note": "Raster logo — inline as a data: URI; it will not recolour, so use a light variant on inverted surfaces."
     }
-  ],
-  "unresolved": [
-    {
-      "name": "Modernist",
-      "lastTriedId": "03f44d8a-8146-4293-8dc1-8807e6f1f385",
-      "reason": "get_project returned HTTP 404 not_found on jontryggvi@avista.is (2026-08-10). The id may belong to a different login or environment. Resolve with a fresh share link and promote into `systems`.",
-      "tokenFileHint": "styles.css"
-    },
-    { "name": "Sol & Drift Design System", "reason": "Seen in the claude.ai/design UI; project id not captured yet." },
-    { "name": "ÖRLÖ Design System", "reason": "Seen in the claude.ai/design UI; project id not captured yet." },
-    { "name": "Reykjavík Attractions Design System", "reason": "Seen in the claude.ai/design UI; project id not captured yet." },
-    { "name": "LHI Design System", "reason": "Seen in the claude.ai/design UI; project id not captured yet." }
   ]
 }
