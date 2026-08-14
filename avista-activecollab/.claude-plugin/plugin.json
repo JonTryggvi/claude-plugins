@@ -1,7 +1,7 @@
 {
   "name": "avista-activecollab",
-  "version": "0.1.0",
-  "description": "Create tasks, assign them to colleagues, set estimates, and log tracked hours in Avista's self-hosted ActiveCollab from Claude Code — a one-time token bootstrap that exchanges the 1Password-held login for an API token without ever storing the password, a pagination-aware `ac` API client, and approval-gated write skills that resolve projects, people and job types from names to IDs before posting.",
+  "version": "0.2.0",
+  "description": "Run the whole task loop in Avista's self-hosted ActiveCollab from Claude Code — create a task with a runnable prompt in its description, pull that prompt back out as a working brief, measure the hours from the git log when it lands, and book them against the same task. Includes a one-time token bootstrap that exchanges the 1Password-held login for an API token without ever storing the password, a pagination-aware `ac` API client, and approval-gated write skills that resolve projects, people and job types from names to IDs before posting.",
   "author": {
     "name": "Avista",
     "url": "https://avista.is"

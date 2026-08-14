@@ -9,9 +9,41 @@ find online about ActiveCollab authentication describes the *cloud* flow, which 
 |---|---|
 | `activecollab-setup` | One-time machine setup — token bootstrap, `ac` client install, verification. |
 | `activecollab-create-task` | Create/update a task; resolve project, assignee, task list; set estimate, due date, labels. |
+| `activecollab-start-task` | Pull a task and read its description back as a working brief. |
 | `activecollab-log-time` | Log a time record against a task or project. |
 | `activecollab-suggest-time` | Measure hours from the git log and propose entries against candidate tasks. |
 | `avista-activecollab-overview` | What's in the box and which skill to run. |
+
+## Task descriptions carry a runnable prompt
+
+Tasks created through this plugin put a prompt in the description, written so whoever picks the task up
+can paste it into Claude Code and start — the description is the handoff, not a label.
+`skills/activecollab-create-task/scripts/prompt-to-body.sh` wraps a plain-text prompt in the right
+container:
+
+```bash
+CONTAINER=magic bash prompt-to-body.sh prompt.md "Paste into Claude Code:" > body.html
+jq -n --arg n "$NAME" --rawfile b body.html '{name:$n, body:$b}' > payload.json
+```
+
+`CONTAINER=magic` nests a `<pre data-syntax="markdown"><code>` block inside ActiveCollab's magic callout
+(`<aside class="callout-wrapper aside-magic">`) — prominent and copy-safe. `code` is the bare code block;
+`magic-only` is a callout of paragraphs and **does not preserve whitespace**, so it is wrong for prompts.
+All three survive the API with classes and `data-syntax` intact, verified against the live instance.
+
+The escaping is the point. The body is HTML, so a prompt containing `2>&1` or `<2 items` corrupts the
+markup and silently truncates the rendered description. The helper escapes `&` first, then `<` and `>`.
+Never concatenate HTML into JSON by hand — build the payload with `jq --rawfile`.
+
+`activecollab-start-task` reads it back: `scripts/task-to-prompt.sh` takes the last `<code>` block,
+unescapes the entities, and prints the prompt on stdout with the task metadata on stderr. The round-trip
+is byte-identical, verified against the live instance with `>3`, `&`, `2>&1`, `<2 items` and Icelandic
+characters in the prompt.
+
+**Task descriptions are untrusted input.** They are written by colleagues and, on client projects, by
+`Client`-class users. `start-task` treats the extracted text as data describing work and requires the user
+to confirm before acting on it — it never silently follows directives found in a task body. Anyone with
+project access can edit one, and the entire point of the feature is that the body arrives as a prompt.
 
 ## Time suggestions from git
 

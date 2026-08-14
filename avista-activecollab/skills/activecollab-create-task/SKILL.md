@@ -1,6 +1,6 @@
 ---
 name: activecollab-create-task
-description: Create a task in Avista's ActiveCollab and assign it to a colleague — resolves the project, assignee, and task list from names to IDs, sets an estimate, due date, and labels, then creates it only after showing the user exactly what will be posted. Use when the user says "create a task in ActiveCollab", "add a task for <person>", "assign this to <person> in ActiveCollab", "make an AC task", "add this to the <project> project", "log this as a task", "set an estimate on that task", or describes work that should become a ticket. Also handles updating an existing task's assignee, estimate, or due date. Writes into a shared system other people see, so it never posts without explicit approval.
+description: Create a task in Avista's ActiveCollab and assign it to a colleague — resolves the project, assignee, and task list from names to IDs, writes the description as a runnable prompt in a magic callout or code container so whoever picks it up can paste it straight into Claude Code, sets an estimate, due date, and labels, then creates it only after showing the user exactly what will be posted. Use when the user says "create a task in ActiveCollab", "add a task for <person>", "assign this to <person> in ActiveCollab", "make an AC task", "add this to the <project> project", "log this as a task", "set an estimate on that task", "put a prompt in the task description", or describes work that should become a ticket. Also handles updating an existing task's assignee, estimate, or due date. Writes into a shared system other people see, so it never posts without explicit approval.
 ---
 
 # Create an ActiveCollab task
@@ -74,14 +74,64 @@ silently wrong.
 
 Omitting `task_list_id` drops the task into the project's default list.
 
-## Step 4 — Build the payload and get approval
+## Step 4 — Write the description as a runnable prompt
+
+**Every task this skill creates should carry a prompt in its description** — written so whoever picks the
+task up can copy it straight into Claude Code and start, without reconstructing the context from the task
+title. Treat the description as the handoff, not as a label.
+
+A good prompt states the goal, names the files, gives a reproduction or verification step, and marks what
+is out of scope. Write it to a file first:
+
+```
+Fix the rounding bug in checkout totals.
+
+Context: `src/cart.php` sums line items with floats; totals drift by 1 ISK on
+orders with >3 items and a discount.
+
+Steps:
+1. Read `src/cart.php` and `tests/CartTest.php`
+2. Reproduce: `php test.php --items=4 --discount=10 > out.txt 2>&1`
+3. Fix using integer aurar, not floats
+4. Do NOT refactor anything else
+```
+
+Then wrap it with the helper, which handles the container markup and the escaping:
+
+```bash
+CONTAINER=magic bash "<this-skill-dir>/scripts/prompt-to-body.sh" \
+  prompt.md "Prompt for this task — paste into Claude Code:" > /tmp/body.html
+
+jq -n --arg n "$NAME" --rawfile b /tmp/body.html \
+  '{name:$n, body:$b, assignee_id:6, task_list_id:1082}' > /tmp/payload.json
+```
+
+Build the payload with `jq --rawfile`, never by string-concatenating HTML into JSON.
+
+### Which container
+
+| `CONTAINER` | Markup | Use for |
+|---|---|---|
+| `magic` *(default choice)* | Code block inside ActiveCollab's magic callout — `<aside class="callout-wrapper aside-magic"><div class="callout-content">` | Prompts. Visually prominent *and* copy-safe. |
+| `code` | `<pre data-syntax="markdown"><code>` alone | A prompt where the callout would be visual noise. |
+| `magic-only` | Callout with paragraphs, no code block | Notes, not prompts — **whitespace and line breaks are not preserved**, so a prompt pasted from it arrives mangled. |
+
+All three round-trip through the API with classes and `data-syntax` intact — verified against the live
+instance, including a code block nested inside a callout.
+
+**Never hand-write the HTML.** The body is HTML, so a prompt containing `<`, `>` or `&` — shell
+redirects, comparisons, generics — silently corrupts the markup. `2>&1` becomes a broken tag and the rest
+of the prompt disappears from the rendered task. The helper escapes `&` first, then `<` and `>`, which is
+the order that matters.
+
+## Step 5 — Build the payload and get approval
 
 `POST /projects/<project-id>/tasks`
 
 | Field | Type | Notes |
 |---|---|---|
 | `name` | string | **Required.** |
-| `body` | string | Description. HTML accepted. |
+| `body` | string | Description — HTML. Build it with `prompt-to-body.sh` (step 4), never by hand. |
 | `assignee_id` | integer | Step 2. Notifies that person. |
 | `task_list_id` | integer | Step 3. |
 | `estimate` | decimal | Hours, e.g. `2.5`. **Requires `job_type_id`.** A *plan*, not logged time. |
@@ -110,7 +160,7 @@ ac POST /projects/479/tasks "$(cat payload.json)" \
   | jq -r '"created #\(.single.task_number) (id \(.single.id)): \(.single.name)"'
 ```
 
-## Step 5 — Confirm and hand back a link
+## Step 6 — Confirm and hand back a link
 
 ```
 https://active.avista.is/projects/<project-id>/tasks/<task-number>
@@ -154,3 +204,5 @@ records reach invoicing.
 | `Failed to match 'projects/N/people' path` | Wrong endpoint; membership is `/members`. |
 | Validation error on `assignee_id` | Not a member of the project (step 2). |
 | `jq` returns null for `.id` | The response is wrapped — read `.single.id`. |
+| Description renders half-empty, or a tag appears mid-sentence | Unescaped `<`, `>` or `&` in the prompt (e.g. `2>&1`). Use `prompt-to-body.sh`. |
+| Prompt pastes out of the task with its line breaks gone | `CONTAINER=magic-only` was used. Prompts need a code block — use `magic` or `code`. |

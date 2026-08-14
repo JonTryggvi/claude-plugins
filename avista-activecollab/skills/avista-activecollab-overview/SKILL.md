@@ -15,16 +15,28 @@ Present this overview, then point the user at the right skill.
 | Skill | What it does | When to use it |
 |---|---|---|
 | `activecollab-setup` | Installs the 1Password CLI, exchanges the user's ActiveCollab login for an API token, writes it to `~/.claude/.env`, installs the `ac` client, and verifies with a live call. | **Once per machine**, before anything else. |
-| `activecollab-create-task` | Creates a task — resolves project, assignee and task list from names to IDs, sets estimate/due date/labels, posts on approval. Also updates existing tasks. | Turning described work into a ticket. |
+| `activecollab-create-task` | Creates a task — resolves project, assignee and task list from names to IDs, writes the description as a runnable prompt in a magic callout or code container, sets estimate/due date/labels, posts on approval. Also updates existing tasks. | Turning described work into a ticket. |
+| `activecollab-start-task` | Pulls a task and reads its description back out as a working brief, then starts once you confirm. | Picking up a ticket someone wrote for you. |
 | `activecollab-log-time` | Logs a time record against a task or project — resolves job type and person, posts on approval. | Recording hours actually worked. |
 | `activecollab-suggest-time` | Measures working time from the git log (commits grouped into sittings), finds candidate tasks, and proposes one entry per sitting. Refuses to guess when commits are a poor signal. | After finishing a feature, when you need to know what to log and against what. |
 
 ```
 1. activecollab-setup          ← once per machine
-2. activecollab-create-task    ← whenever work needs a ticket
-3. activecollab-suggest-time   ← when a feature lands: what to log, against which task
+
+   activecollab-create-task    ← work needs a ticket: writes the prompt into the description
+   activecollab-start-task     ← picking one up: reads that prompt back out
+   activecollab-suggest-time   ← it landed: what to log, against which task
    activecollab-log-time       ← writes it
 ```
+
+The middle four are a loop. A task's description carries the prompt, `start-task` hands it back, and
+`suggest-time` closes it by logging the hours against the same task.
+
+## Descriptions are handoffs
+
+Tasks created here carry a **runnable prompt** in the description — goal, files, a reproduction step, and
+what is out of scope — wrapped in ActiveCollab's magic callout with a code block inside, so it copies out
+verbatim. The person who picks the task up should not have to reconstruct the context from the title.
 
 ## Estimates are not logged time
 
