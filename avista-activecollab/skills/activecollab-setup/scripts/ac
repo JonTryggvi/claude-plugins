@@ -1,0 +1,143 @@
+#!/usr/bin/env bash
+#
+# ac — thin ActiveCollab API client for Avista.
+#
+#   ac GET    /users
+#   ac GETALL /projects                       # follows pagination, emits one merged array
+#   ac POST   /projects/428/tasks '{"name":"Fix the thing","assignee_id":6}'
+#   ac PUT    /projects/428/tasks/91 '{"estimate":2.5}'
+#   ac DELETE /users/6/api-subscriptions/511
+#
+# Reads config from ~/.claude/.env:
+#   ACTIVECOLLAB_URL     e.g. https://active.avista.is
+#   ACTIVECOLLAB_TOKEN   the API token (primary)
+#   ACTIVECOLLAB_OP_REF  op://Employee/<item-id>/credential (fallback)
+#
+# Token resolution: ACTIVECOLLAB_TOKEN wins; otherwise the token is read from
+# 1Password via ACTIVECOLLAB_OP_REF. The .env path costs no unlock prompts; the
+# 1Password path prompts per call but keeps the token off disk. Either way the
+# token is never passed as a process argument, so it cannot be read out of `ps`.
+#
+# Pagination: ActiveCollab caps some collections (notably /projects) at 100 per
+# page and advertises the real total in X-Angie-PaginationTotalItems. A plain
+# GET silently returns only the first page, which is how you end up reasoning
+# about 100 of 213 projects. Use GETALL for collections.
+#
+set -uo pipefail
+
+ENV_FILE="${CLAUDE_ENV_FILE:-$HOME/.claude/.env}"
+if [ -f "$ENV_FILE" ]; then
+  set -a; . "$ENV_FILE"; set +a
+fi
+
+AC_URL="${ACTIVECOLLAB_URL:-}"
+TOKEN="${ACTIVECOLLAB_TOKEN:-}"
+OP_REF="${ACTIVECOLLAB_OP_REF:-}"
+
+if [ -z "$AC_URL" ] || { [ -z "$TOKEN" ] && [ -z "$OP_REF" ]; }; then
+  cat >&2 <<'EOT'
+ac: not configured.
+
+  ~/.claude/.env needs ACTIVECOLLAB_URL plus either ACTIVECOLLAB_TOKEN
+  or ACTIVECOLLAB_OP_REF. Run the `activecollab-setup` skill to create them.
+EOT
+  exit 78 # EX_CONFIG
+fi
+
+method="${1:-}"
+path="${2:-}"
+body="${3-}"
+
+if [ -z "$method" ] || [ -z "$path" ]; then
+  echo "usage: ac METHOD PATH [json-body]   (METHOD: GET | GETALL | POST | PUT | DELETE)" >&2
+  exit 64 # EX_USAGE
+fi
+
+case "$path" in /*) : ;; *) path="/$path" ;; esac
+
+command -v jq >/dev/null 2>&1 || { echo "ac: jq not installed (brew install jq)." >&2; exit 69; }
+
+if [ -n "$TOKEN" ]; then
+  token="$TOKEN"
+else
+  command -v op >/dev/null 2>&1 || {
+    echo "ac: ACTIVECOLLAB_TOKEN is unset and the 1Password CLI (op) is not installed." >&2
+    echo "    Run the activecollab-setup skill." >&2; exit 69; }
+  token=$(op read "$OP_REF" </dev/null 2>/dev/null) || {
+    echo "ac: could not read the API token from 1Password ($OP_REF)." >&2
+    echo "    If 1Password is locked, unlock it; if the item was removed, re-run activecollab-setup." >&2
+    exit 77 # EX_NOPERM
+  }
+fi
+
+# `printf` is a shell builtin, so the token never becomes a process argument.
+# curl reads its options from a config file handed over on a pipe.
+build_conf() { # verb path [dump-header-file]
+  printf 'header = "X-Angie-AuthApiToken: %s"\n' "$token"
+  printf 'header = "Content-Type: application/json"\n'
+  printf 'request = "%s"\n' "$1"
+  printf 'url = "%s"\n' "${AC_URL%/}/api/v1$2"
+  printf 'silent\nshow-error\nmax-time = 30\nfail-with-body\n'
+  [ -n "${3:-}" ] && printf 'dump-header = "%s"\n' "$3"
+  [ -n "$body" ] && [ "$1" != "GET" ] && printf 'data = @-\n'
+  return 0
+}
+
+explain_failure() {
+  case "$1" in
+    22) echo "ac: ActiveCollab returned an HTTP error (body above)." >&2
+        echo "    A 401 usually means the token was revoked — re-run activecollab-setup." >&2 ;;
+    28) echo "ac: request timed out after 30s." >&2 ;;
+     *) echo "ac: curl failed (exit $1)." >&2 ;;
+  esac
+}
+
+# ---------------------------------------------------------------- GETALL -----
+if [ "$method" = "GETALL" ]; then
+  hdr=$(mktemp); trap 'rm -f "$hdr"' EXIT
+  sep="?"; case "$path" in *\?*) sep="&" ;; esac
+
+  first=$(curl --config <(build_conf GET "${path}${sep}page=1" "$hdr") </dev/null)
+  status=$?
+  if [ $status -ne 0 ]; then printf '%s\n' "$first" >&2; explain_failure $status; exit $status; fi
+
+  if [ "$(printf '%s' "$first" | jq -r 'type')" != "array" ]; then
+    echo "ac: GETALL expects a collection; $path returned an object. Use GET." >&2
+    exit 65 # EX_DATAERR
+  fi
+
+  total=$(grep -i '^x-angie-paginationtotalitems:' "$hdr" | tr -d '\r' | awk '{print $2}')
+  per=$(  grep -i '^x-angie-paginationitemsperpage:' "$hdr" | tr -d '\r' | awk '{print $2}')
+
+  # No pagination headers means the endpoint returns everything in one go
+  # (/users, /job-types and /labels behave this way — they ignore ?page).
+  if [ -z "$total" ] || [ -z "$per" ] || [ "$per" -le 0 ] 2>/dev/null; then
+    printf '%s' "$first"; exit 0
+  fi
+
+  pages=$(( (total + per - 1) / per ))
+  acc="$first"
+  page=2
+  while [ "$page" -le "$pages" ]; do
+    chunk=$(curl --config <(build_conf GET "${path}${sep}page=${page}") </dev/null)
+    status=$?
+    if [ $status -ne 0 ]; then printf '%s\n' "$chunk" >&2; explain_failure $status; exit $status; fi
+    acc=$(printf '%s\n%s' "$acc" "$chunk" | jq -s 'add')
+    page=$((page + 1))
+  done
+
+  got=$(printf '%s' "$acc" | jq 'length')
+  [ "$got" -eq "$total" ] || echo "ac: warning — expected $total items, merged $got." >&2
+  printf '%s' "$acc"
+  exit 0
+fi
+
+# ------------------------------------------------------------ single call ----
+if [ -n "$body" ] && [ "$method" != "GET" ]; then
+  printf '%s' "$body" | curl --config <(build_conf "$method" "$path")
+else
+  curl --config <(build_conf "$method" "$path") </dev/null
+fi
+status=$?
+[ $status -ne 0 ] && { echo >&2; explain_failure $status; }
+exit $status
