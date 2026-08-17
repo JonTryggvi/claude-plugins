@@ -1,6 +1,6 @@
 {
   "name": "avista-wp-releases",
-  "version": "0.6.3",
+  "version": "0.7.0",
   "description": "Avista's WordPress release pipeline for plugins and themes — scaffold GitHub Releases + plugin-update-checker (PUC v5) auto-updates into a project, and ship new versions through that pipeline. Machine onboarding (Homebrew, shell config, SSH keys, gh multi-account auth) moved to the avista-dev-machine plugin.",
   "author": {
     "name": "Avista",
