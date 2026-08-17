@@ -36,7 +36,8 @@ Present this overview, then route the user to the right skill.
 - **Claude Code** on your machine, plus `git`, `python3` (3.9+), and Stockfish
   (setup installs Stockfish via Homebrew on macOS; other OSes get instructions).
 - **SSH access to the Avista org** — the app repo is private. If `git` can't reach
-  it, run the avista `setup-dev-machine` skill first to configure multi-account SSH.
+  it, run the `setup-dev-machine` skill (in the `avista-dev-machine` plugin) first to configure
+  multi-account SSH.
 - **Optional:** an `ANTHROPIC_API_KEY` (or other provider key) for live in-dashboard
   coaching; the queue-and-answer-in-Claude path works without one.
 

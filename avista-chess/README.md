@@ -33,8 +33,8 @@ launch — instead of a manual venv-and-config slog.
 
 - Claude Code, plus `git`, `python3` (3.9+), and Stockfish (setup installs it on
   macOS; other OSes get instructions).
-- **SSH access to the Avista org** — the app repo is private. Run the avista
-  `setup-dev-machine` skill first if `git` can't reach it.
+- **SSH access to the Avista org** — the app repo is private. Run the
+  `setup-dev-machine` skill (in the `avista-dev-machine` plugin) first if `git` can't reach it.
 - Optional `ANTHROPIC_API_KEY` (or other provider key) for live in-dashboard
   coaching; the queue path works without one.
 

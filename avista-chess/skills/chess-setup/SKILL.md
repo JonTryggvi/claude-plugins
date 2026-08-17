@@ -28,8 +28,8 @@ Check and report, before touching anything:
 - `git`, `python3` (3.9+), and `curl` are available.
 - **Stockfish**: `command -v stockfish`. If missing, note it — you'll install it in
   Step 5 (macOS) or give instructions (other OS). Don't fail yet.
-- **SSH access to the Avista org**: the repo is private. The Avista
-  `setup-dev-machine` skill configures multi-account SSH; if `git ls-remote
+- **SSH access to the Avista org**: the repo is private. The `setup-dev-machine` skill (in the
+  `avista-dev-machine` plugin) configures multi-account SSH; if `git ls-remote
   git@github.com:Avista/Avista-Chess.git` fails, stop and route the user there
   (or, for non-Avista users, ask them to use an HTTPS URL / get repo access).
 

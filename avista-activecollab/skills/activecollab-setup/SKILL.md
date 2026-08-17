@@ -119,12 +119,23 @@ add the directory to their `~/.zshrc`.
 
 ## Housekeeping worth raising
 
+> **This endpoint returns every token in plaintext.** `/users/:id/api-subscriptions` includes a `token`
+> field with the live credential in it. **Never** pipe it to `cat`, `head`, `tee`, a log, or a raw
+> response dump — always project the safe fields with `jq` as below. A token printed to a terminal is a
+> token in scrollback, in the session transcript, and in any agent's context; it has to be rotated.
+
 API subscriptions never expire on their own. Once set up, show the user what is live on their account:
 
 ```bash
 ac GET "/users/<their-user-id>/api-subscriptions" \
-  | jq -r '.[] | "\(.id)\t\(.client_name) / \(.client_vendor)\tcreated=\(.created_on|todate)"'
+  | jq -r '.[] | "\(.id)\t\(.client_name) / \(.client_vendor)\tcreated=\(.created_on|todate)\trequests=\(.requests_count)"'
 ```
+
+`requests_count` and `last_used_on` are the useful forensic fields: to test whether some other client is
+using a given subscription, read the count, make the suspect client do one call, and read it again.
+
+Note you can only read **your own** subscriptions — `/users/<someone-else>/api-subscriptions` returns 404
+even for an Owner. A token belonging to another user can only be revoked from that user's account.
 
 Anything unrecognised is a live full-access credential worth revoking
 (`ac DELETE /users/<uid>/api-subscriptions/<id>`) — but **ask first**. A stale-looking entry may be a

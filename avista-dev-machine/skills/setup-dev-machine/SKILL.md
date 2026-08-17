@@ -189,5 +189,10 @@ isn't logged in, go back to **Part D** for that account.
 
 ## Downstream
 
-Once this is done, the machine is ready for everyday work and for the `release-plugin` / `release-theme`
-skills, which rely on the gh account auto-switching set up here.
+Once this is done, the machine can write and push code, and the `release-plugin` / `release-theme` skills
+work — they rely on the gh account auto-switching set up here.
+
+**Next, run `setup-agent-toolkit`** (same plugin). This part got the machine able to ship code; that one
+gets it working the way the team works — the Avista plugins installed, the shared house rules in
+`~/.claude/CLAUDE.md`, and the `~/.claude/.env` token store that the Figma, ActiveCollab and release
+skills read.

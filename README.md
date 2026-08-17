@@ -6,7 +6,8 @@ Source code for the Claude plugins Avista distributes through its organization m
 
 | Plugin | Purpose |
 |---|---|
-| [`avista-wp-releases/`](avista-wp-releases/) | Multi-account GitHub onboarding, auto-updater scaffolding, and release workflow for Avista WordPress plugins and themes. |
+| [`avista-dev-machine/`](avista-dev-machine/) | Onboard an Avista developer's Mac — base tooling and shell config, SSH keys and `gh` multi-account auth, then the agent layer (plugins, shared `~/.claude/CLAUDE.md`, `~/.claude/.env` token store). |
+| [`avista-wp-releases/`](avista-wp-releases/) | Auto-updater scaffolding and release workflow for Avista WordPress plugins and themes. (Machine onboarding moved to `avista-dev-machine`.) |
 | [`avista-wp-prod-ops/`](avista-wp-prod-ops/) | Operate safely on Avista WordPress sites whose code lives on production over SSH — inspect-first triage, mandatory git backup of DB-stored code, and WP Code Box 2 snippet install/update without the admin UI. |
 | [`avista-wpgb-trp-fix/`](avista-wpgb-trp-fix/) | Fix the recurring bug where WP Grid Builder facets and pagination return the default language on TranslatePress sites. Ships a transport-aware filter pair plus a ready-to-deploy PHP snippet. |
 | [`avista-memory-tools/`](avista-memory-tools/) | Maintenance tools for the agent-instructions, memory, and git-hygiene layers — CLAUDE.md bootstrap, CLAUDE.md audit, memory store linter, pre-push sync check, skill-bundle release workflow. |

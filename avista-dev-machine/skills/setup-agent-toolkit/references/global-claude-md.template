@@ -1,0 +1,122 @@
+# Claude Code — Avista house rules
+
+Shared baseline for `~/.claude/CLAUDE.md`. These are the rules that apply to **everyone** at Avista.
+
+Add your own sections below for personal preferences, machine-specific paths, and account details — keep
+those separate from this baseline so it stays mergeable when the team updates it.
+
+## Git Workflow
+- After implementing requested changes, if this directory is a Git repo, create a local commit.
+- If the task is analysis-only and no files were changed, skip commit.
+- Commit only files changed for the task. One commit per task.
+- Use conventional commit messages: `feat: ...`, `fix: ...`, `chore: ...`, `refactor: ...`.
+- If unrelated dirty changes exist, do not include them. Stop and ask first.
+- Never push unless explicitly asked.
+- Do not bump version unless explicitly asked.
+
+## Git execution environment
+- **Detect the environment before deciding how to run git — do not assume sandbox.** Run git yourself,
+  normally, when `$CLAUDECODE` is set, `uname` is `Darwin`, and `.git/index` is writable (i.e. Claude Code
+  on the local Mac). This is the common case.
+- **Only when actually in a Linux sandbox** (`$CLAUDECODE` unset, `uname` is Linux, or a git write fails
+  with a lock/permission error): do not run git — the sandbox can't reach the Mac-local repo, and failed
+  attempts leave stale `index.lock` files that block the normal workflow. In that case, after making file
+  changes, tell the user to run `gsend "<commit message>"` to commit and push.
+- A session/skill path containing `local-agent-mode-sessions` is **not** a sandbox signal — Claude Code
+  uses that path too. Use the `$CLAUDECODE` / `uname` / writability test above, never the path.
+
+## Account / org identity
+- A Mac may run the Claude **Desktop app** and the Claude Code **CLI** with **separate logins** — they can
+  be signed into different accounts/orgs at the same time.
+- `~/.claude.json` → `oauthAccount`, and the startup `userEmail` context, reflect the **CLI's** login
+  only. They are NOT authoritative for a desktop-app session.
+- For a desktop session (`CLAUDE_CODE_ENTRYPOINT=claude-desktop`), the authoritative account/org is the
+  **app sidebar label** and the **workspace UUID in the session path**.
+- Never state which account/org a session is in — and never tell the user they're on the "wrong account" —
+  from `~/.claude.json` or `userEmail` alone. Check `CLAUDE_CODE_ENTRYPOINT` first.
+
+## Interaction Style
+- Do not apologise. Get to the root of the problem.
+- No sycophancy. Not all ideas are good — say so when they are not.
+- Ask for clarification if a prompt is ambiguous or unclear before writing any code.
+- Do not offer features that are not available in this region.
+
+## Time estimates
+- "Hours" or "an estimate" means **time to log on a timesheet**, not what the work would cost a developer
+  building it by hand. Measure it; do not price it.
+- Measure from the git log: group commits into sittings (a gap over ~45 min starts a new sitting), sum the
+  commit-to-commit spans, then add the investigation before each sitting's first commit and any
+  uncommitted tail work.
+- Never present wall-clock elapsed as working time. Sessions routinely span days with long gaps.
+- State which basis was used, and break the total down per sitting so it maps onto time entries.
+- Only give a by-hand scope estimate when asked for a **quote** for work not yet done — and label it as a
+  quote, not measured time.
+- If commits are a poor signal (squashed at the end, work done in a web UI, long investigation with no
+  commits), say so and ask what to measure from instead of guessing.
+
+## Generated prompts & copy-paste output
+- Any text meant to be copied and pasted elsewhere — a prompt for another session/agent, an issue/PR body,
+  a message, a snippet — goes inside a fenced code block by default, so it copies verbatim.
+- If that content itself contains fenced code blocks, wrap it in an outer fence with MORE backticks (e.g.
+  four ````) so the inner ``` fences survive the copy.
+- This applies to the deliverable text only; the conversational explanation around it stays prose.
+
+## Refactoring
+- Do not refactor or restructure code while adding features.
+- Refactoring is a separate task and should only happen when a working solution exists.
+
+## General Coding Style
+- Indentation: 2 spaces.
+- Never use `switch` statements. Use an associative array in PHP or an object literal in JavaScript.
+- When providing a partial code block, mark it with **ATTENTION** and include placement anchors.
+
+## PHP
+- Target PHP 8.0+ syntax and features.
+- Use short array syntax `[]`, never `array()`.
+- Include scalar type declarations on parameters, return types, and class properties.
+- Do not add `declare(strict_types=1)` unless explicitly asked.
+- Use Heredoc (`<<<EOT`) for multi-line strings containing HTML, SQL, or other languages. Use the
+  appropriate variant: `<<<HTML`, `<<<SQL`, `<<<JS` etc. for clarity.
+- Build complex solutions as classes. Avoid global functions unless they serve a genuinely global purpose.
+- Do not add closing PHP tags `?>` in files that are purely PHP.
+
+## JavaScript
+- Use template literals (backticks) for multi-line strings.
+- No frameworks unless explicitly part of the project stack.
+
+## WordPress — Composer / vendor
+- Always guard `vendor/autoload.php` with `file_exists()` before requiring it — never a bare `require`.
+- Always guard PUC (plugin-update-checker) usage with `class_exists( PucFactory::class )` before calling it.
+- Always guard `getVcsApi()` and `enableReleaseAssets()` calls with `method_exists()` checks.
+- Pass a specific filename regex and `REQUIRE_RELEASE_ASSETS` to `enableReleaseAssets()` so PUC only picks
+  up the CI-built zip and never falls back to GitHub's auto-generated source archives. Pattern:
+  `/theme-slug-v[\d.]+\.zip($|[?&#])/i`
+- Add an `admin_notices` hook that shows a soft warning to admins when the vendor folder is missing,
+  instead of letting the site crash.
+
+## Auto-Updater (GitHub Releases)
+Auto-updater scaffolding and the release flow live in the `avista-wp-releases` plugin. Invoke
+`setup-plugin-autoupdate`, `setup-theme-autoupdate`, `release-plugin`, or `release-theme` as appropriate
+rather than copy-pasting boilerplate into a project by hand.
+
+## Figma design assets
+When a design lives in Figma and is open in the Figma desktop app, **always use the local `figma-desktop`
+MCP** (`get_design_context`, `get_screenshot`, `get_metadata`, `get_variable_defs`) — not the cloud Figma
+MCP. The cloud MCP rate-limits hard on a View seat and returns `tool call limit` errors on the first call;
+its limit resets quarterly, not daily, so there is no useful window to wait for. The local MCP has no such
+limit while Figma desktop is running.
+
+The full import workflow — folder naming from the Figma frame name, pulling metadata before downloading
+anything, inventorying already-shipped assets so nothing is duplicated, the REST `/v1/images` screenshot
+export, and the `context.md` write-up — lives in the `avista-figma-import` plugin. Invoke that skill
+instead of reimplementing the steps.
+
+`FIGMA_TOKEN` lives in `~/.claude/.env` (mode `0600`), sourced with `set -a; . ~/.claude/.env; set +a`.
+See the `setup-agent-toolkit` skill for how to create and populate that file safely.
+
+### Caching rules
+- On subsequent reads, prefer disk copies over re-hitting Figma.
+- The entire `references/` folder is git-ignored. It holds reference material only — design comps, raw
+  logos, scratch ports.
+- **If a file in `references/` ends up needing to ship at runtime, move (don't copy) it into `assets/`** so
+  there's a single source of truth and no drift.

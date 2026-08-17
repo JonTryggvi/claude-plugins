@@ -1,0 +1,20 @@
+{
+  "name": "avista-dev-machine",
+  "version": "0.1.0",
+  "description": "Get an Avista developer's Mac from nothing to shipping, diagnose-first. A read-only doctor scans base tooling, shell config, gh accounts and token scopes, SSH reachability (which username each host actually greets), the agent layer and role tooling, then routes every gap to the skill and step that closes it — most broken machines are half-configured, not fresh, so this usually reduces the job to one or two named fixes. The setup skills then cover base tooling (Homebrew, git, gh), a working shell config with the team functions, SSH keys and gh auth wired to the right GitHub account per project, and the agent layer the other Avista plugins assume: Claude Code on PATH, the org marketplace, the shared global instruction file, and the ~/.claude/.env token store. Detect-and-merge rather than clobber: existing configs are backed up and only missing pieces are added. Token values are pasted by the user and never echoed, logged, or passed as process arguments — the token store is inspected by key name and never printed.",
+  "author": {
+    "name": "Avista",
+    "url": "https://avista.is"
+  },
+  "homepage": "https://avista.is",
+  "keywords": [
+    "onboarding",
+    "dev-machine",
+    "homebrew",
+    "shell",
+    "ssh",
+    "gh",
+    "macos",
+    "avista"
+  ]
+}

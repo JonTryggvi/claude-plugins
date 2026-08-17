@@ -8,6 +8,9 @@ elif [ -x /usr/local/bin/brew ]; then
   eval "$(/usr/local/bin/brew shellenv)"
 fi
 
+# Native installers (Claude Code, uv, pipx) land here; macOS doesn't PATH it by default.
+export PATH="$HOME/.local/bin:$PATH"
+
 # nvm (Node Version Manager), if installed via Homebrew.
 export NVM_DIR="$HOME/.nvm"
 [ -s "/opt/homebrew/opt/nvm/nvm.sh" ] && . "/opt/homebrew/opt/nvm/nvm.sh"

@@ -12,9 +12,14 @@
       "description": "Maintenance tools for the agent-instructions, memory, and git-hygiene layers — bootstrap a project CLAUDE.md from its source, audit existing CLAUDE.md files for content that belongs elsewhere, lint the auto-memory store for staleness and drift, check a branch is in sync with origin/main before pushing, and ship updates to Avista skill-bundle plugins through the org marketplace."
     },
     {
+      "name": "avista-dev-machine",
+      "source": "./avista-dev-machine",
+      "description": "Get an Avista developer's Mac from nothing to shipping, diagnose-first. A read-only doctor scans base tooling, shell config, gh accounts and token scopes, SSH reachability (which username each host actually greets), the agent layer and role tooling, then routes every gap to the skill and step that closes it — most broken machines are half-configured, not fresh, so this usually reduces the job to one or two named fixes. The setup skills then cover base tooling (Homebrew, git, gh), a working shell config with the team functions, SSH keys and gh auth wired to the right GitHub account per project, and the agent layer the other Avista plugins assume: Claude Code on PATH, the org marketplace, the shared global instruction file, and the ~/.claude/.env token store. Detect-and-merge rather than clobber: existing configs are backed up and only missing pieces are added. Token values are pasted by the user and never echoed, logged, or passed as process arguments — the token store is inspected by key name and never printed."
+    },
+    {
       "name": "avista-wp-releases",
       "source": "./avista-wp-releases",
-      "description": "Avista's WordPress release pipeline for plugins and themes — onboard a developer's machine for multi-account GitHub (gh CLI + SSH), scaffold GitHub Releases + plugin-update-checker (PUC v5) auto-updates, and ship new versions through that pipeline."
+      "description": "Avista's WordPress release pipeline for plugins and themes — scaffold GitHub Releases + plugin-update-checker (PUC v5) auto-updates into a project, and ship new versions through that pipeline. Machine onboarding (Homebrew, shell config, SSH keys, gh multi-account auth) moved to the avista-dev-machine plugin."
     },
     {
       "name": "avista-wp-prod-ops",

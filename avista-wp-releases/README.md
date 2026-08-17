@@ -4,13 +4,19 @@ Avista's WordPress release pipeline for plugins *and* themes, packaged as a Clau
 
 | Skill | What it does |
 |---|---|
-| `setup-dev-machine` | Sets up a new Avista dev Mac end-to-end — base tooling (Homebrew, gh, git), shell config (`~/.zprofile` + `~/.zshrc` + `~/.zsh` team functions), SSH keys, gh multi-account auth, and git identity. A plain-language, hand-holding guide. Run once per machine; it's the prerequisite for the release skills. |
 | `setup-plugin-autoupdate` | Wires GitHub Releases + plugin-update-checker (PUC v5) into a new WordPress plugin. Drops in the bootstrap class, the Actions workflow, the Composer dependency, and the conventions. |
 | `setup-theme-autoupdate` | Same pipeline for a WordPress theme. Different version source (`style.css`), different PUC arguments (`get_stylesheet_directory()`), different release zip naming (`<theme-slug>.zip`), no brand-icon injection. |
 | `release-plugin` | Ships a new version of a plugin that already has the pipeline wired up. Bumps the header version in the main plugin file, prepares the `gsend` commit, walks through creating the GitHub release, verifies the workflow attached `<plugin>-v<VER>.zip`. |
 | `release-theme` | Ships a new version of a theme. Bumps `style.css`, prepares the `gsend` commit, walks through the release, verifies `<theme-slug>.zip` was attached. |
 
 Plus an `avista-wp-releases-overview` skill — run `/avista-wp-releases-overview` (or just ask "what does this plugin do?") to print this summary, the recommended order, and prerequisites in-session.
+
+> **Machine setup moved out.** `setup-dev-machine` — the "run this first" prerequisite that wires up
+> Homebrew, the shell config, SSH keys and `gh` multi-account auth — now lives in the
+> [`avista-dev-machine`](../avista-dev-machine/) plugin, alongside `setup-agent-toolkit`. Machine setup
+> isn't part of a release pipeline, and everyone needs it whether or not they ship WordPress releases.
+> Install that plugin and run `setup-dev-machine` before your first release; releases fail with `403` when
+> `gh` is on the wrong account.
 
 ## Why this exists
 
