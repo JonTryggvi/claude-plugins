@@ -131,10 +131,34 @@ if [ -f "$HOME/.ssh/config" ]; then
   if [ -n "$gh_hosts" ]; then ok "~/.ssh/config github hosts" "$gh_hosts"
   else warn "~/.ssh/config github hosts" "none found"; gap "no github Host entry in ~/.ssh/config" "setup-dev-machine (Part C)"; fi
   site_n="$(printf '%s\n' "$hosts" | grep -isc 'tempurl.host')"
-  [ "$site_n" -gt 0 ] && ok "production site hosts" "$site_n *.tempurl.host entries" \
-    || warn "production site hosts" "none — needed by wp-prod-ops / wp-performance"
+  if [ "$site_n" -gt 0 ]; then
+    ok "production site hosts" "$site_n *.tempurl.host entries"
+  else
+    warn "production site hosts" "none — wp-prod-ops / wp-performance can't connect"
+    gap "no production site access configured" "setup-site-access"
+  fi
 else
   bad "~/.ssh/config" "missing"; gap "~/.ssh/config" "setup-dev-machine (Part C)"
+fi
+
+# 1Password SSH agent — how Avista serves keys for client sites.
+# ssh-add -l prints key comments + fingerprints only; no key material.
+OP_SOCK="$HOME/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock"
+if [ -S "$OP_SOCK" ]; then
+  if grep -qs 'IdentityAgent' "$HOME/.ssh/config" 2>/dev/null; then
+    agent_keys="$(ssh-add -l 2>/dev/null | wc -l | tr -d ' ')"
+    if [ "${agent_keys:-0}" -gt 0 ]; then
+      ok "1Password SSH agent" "$agent_keys key(s): $(ssh-add -l 2>/dev/null | awk '{print $3}' | tr '\n' ' ')"
+    else
+      warn "1Password SSH agent" "socket + config present but NO keys — 1Password locked?"
+      gap "1Password agent serving no keys (locked?)" "unlock 1Password, then setup-site-access"
+    fi
+  else
+    warn "1Password SSH agent" "agent running but no IdentityAgent line in ~/.ssh/config"
+    gap "SSH not pointed at the 1Password agent" "setup-site-access (Step 1)"
+  fi
+else
+  printf '  ·  %-30s %snot in use (fine if keys are on disk)%s\n' "1Password SSH agent" "$DIM" "$R"
 fi
 
 if [ "$NO_NET" -eq 0 ]; then
@@ -219,7 +243,33 @@ else
 fi
 
 # ══ 5. Role tooling ═══════════════════════════════════════════════════════════
-head_ "5. Role tooling (only needed for some work)"
+head_ "5. Role tooling (only needed for some work — setup-wp-toolchain installs these)"
+
+# PHP extension set WordPress depends on. Homebrew's build has them all, so a
+# gap here usually means a hand-rolled or system PHP is shadowing it.
+if have php; then
+  mods="$(php -m 2>/dev/null)"
+  missing_ext=""
+  for e in mysqli gd intl mbstring curl zip dom simplexml exif sodium bcmath fileinfo tokenizer; do
+    printf '%s\n' "$mods" | grep -qix "$e" || missing_ext="$missing_ext $e"
+  done
+  if [ -z "$missing_ext" ]; then ok "php extensions" "all WordPress-required present"
+  else
+    warn "php extensions" "missing:$missing_ext"
+    gap "php missing extensions ($missing_ext)" "setup-wp-toolchain (Step 1)"
+  fi
+fi
+
+# Local WP site runners and the local-TLS CA — presence only, never a gap.
+for app in "Local" "Docker"; do
+  [ -e "/Applications/$app.app" ] && ok "$app.app" "installed" \
+    || printf '  ·  %-30s %snot installed — setup-wp-toolchain (Step 6)%s\n' "$app.app" "$DIM" "$R"
+done
+if have mkcert; then
+  caroot="$(mkcert -CAROOT 2>/dev/null)"
+  [ -f "$caroot/rootCA.pem" ] && ok "mkcert local CA" "installed" \
+    || warn "mkcert local CA" "mkcert present but CA not installed — run: mkcert -install"
+fi
 
 check_opt() { # check_opt <cmd> <what needs it> [install hint]
   if have "$1"; then ok "$1" "$2"

@@ -10,19 +10,24 @@ code the way the rest of the team does.
 | `dev-machine-doctor` | **Read-only** scan — base tooling, shell config, `gh` accounts + token scopes, SSH reachability, agent layer, role tooling — routing each gap to the skill that fixes it. Changes nothing. |
 | `setup-dev-machine` | Base tooling (Xcode CLT/git, Homebrew, `gh`), shell config (`~/.zprofile` + `~/.zshrc` + `~/.zsh` modules with `gsend`, `set_gh_user`, `new_ssh_key`), SSH keys per GitHub account, `gh` multi-account auth, per-project git identity. |
 | `setup-agent-toolkit` | Claude Code on PATH, the Avista marketplace + plugins, the shared `~/.claude/CLAUDE.md` house rules, the `~/.claude/.env` token store, and the Figma MCP choice. |
+| `setup-wp-toolchain` | PHP 8 + WordPress-required extensions, Composer, PHPUnit, wp-cli, Node via nvm, Local by Flywheel / Docker + mkcert, and the `weasyprint`+`poppler` render pair. **By role.** |
+| `setup-site-access` | SSH to WPMU DEV client sites — the 1Password SSH agent, per-site `Host` blocks, read-only reachability check. **By role.** |
 | `avista-dev-machine-overview` | Self-describing entry point — `/avista-dev-machine-overview`. |
 
 Diagnose first, fix what the report names, then confirm:
 
 ```
-/dev-machine-doctor        # read-only — tells you which of the next two you need
-/setup-dev-machine
-/setup-agent-toolkit
+/dev-machine-doctor        # read-only — tells you which of the rest you need
+/setup-dev-machine         # everyone
+/setup-agent-toolkit       # everyone
+/setup-wp-toolchain        # only if they build/test WordPress locally
+/setup-site-access         # only if they touch client production over SSH
 /dev-machine-doctor        # confirm the gaps closed
 ```
 
 Most machines that "aren't working" are half-configured rather than fresh, so the doctor usually reduces
-the job to one or two named gaps.
+the job to one or two named gaps. The last two skills are genuinely optional and often mutually exclusive —
+someone who only edits code living on production needs no local PHP at all.
 
 ## Install
 
@@ -100,19 +105,28 @@ detection, the dual-login account-identity trap, coding style, PHP/JS convention
 guards, and the Figma MCP choice. Personal preferences, machine paths and account details stay out, so the
 baseline remains mergeable when the team updates it.
 
-## Not covered yet
+## Client production credentials
 
-Named here so nobody assumes it's handled:
+`setup-site-access` is the only skill here that touches live client infrastructure, so it carries harder
+limits: it never handles a password or private key, takes host and username only from the person or the
+WPMU DEV Hub (never from a hostname found in a file or ticket), verifies read-only, and never auto-clears a
+changed host key. Production *changes* are `avista-wp-prod-ops`' job, behind its own approval gates.
 
-- **Installing the WordPress toolchain** — PHP 8, Composer, phpunit, wp-cli, Node LTS via nvm, Docker
-  Desktop, mkcert, and the `weasyprint` + `poppler` pair `avista-design-systems`' `brand-doc` render needs.
-  `dev-machine-doctor` *reports* which are missing and prints the `brew` line for each; nothing installs
-  them. (Only `jq` ships with current macOS — `rg` does not, and is optional since Claude Code brings its
-  own search.)
-- **Per-site production access** — the `*.tempurl.host` SSH config entries `avista-wp-prod-ops` and
-  `avista-wp-performance` assume, plus 1Password CLI sign-in (`activecollab-setup` installs `op` itself).
-  Adding a host block is still a manual `~/.ssh/config` edit; the doctor only counts the entries already
-  there.
+Keys come from the **1Password SSH agent** rather than files on disk, which means a locked 1Password
+presents as `Permission denied (publickey)` — an auth error that looks like a broken key. `ssh-add -l`
+distinguishes the two instantly, so the doctor reports the agent's key count and names.
+
+The sharp edge worth knowing: **`IdentitiesOnly yes` in a host block overrides the agent** for that host.
+It's how legacy on-disk keys keep working, and also how a correctly configured agent gets silently
+bypassed. The right key in `ssh-add -l` but one host still refusing is nearly always this.
+
+## Not covered
+
+- **Migrating a machine from on-disk SSH keys to the 1Password agent.** Both work; `setup-site-access`
+  prefers the agent for fresh setups and won't break a working legacy config mid-task.
+- **Granting WPMU DEV Hub access** — administrative, not technical.
+- Only `jq` ships with current macOS. `rg` does not, and is optional since Claude Code brings its own
+  search, so the doctor lists it with a `brew` hint rather than counting it as a gap.
 
 ## Downstream
 
@@ -121,3 +135,6 @@ Named here so nobody assumes it's handled:
 | `activecollab-setup` | Mints `ACTIVECOLLAB_TOKEN` into the `.env` this plugin created |
 | `avista-figma-import` | Needs `FIGMA_TOKEN` and the `figma-desktop` MCP |
 | `release-plugin` / `release-theme` | Need the `gh` multi-account auth from `setup-dev-machine` |
+| `wp-prod-ssh-ops` (`avista-wp-prod-ops`) | Needs a host verified by `setup-site-access` |
+| `wp-perf-audit` (`avista-wp-performance`) | Needs a host verified by `setup-site-access` |
+| `brand-doc` (`avista-design-systems`) | Needs `weasyprint` + `poppler` from `setup-wp-toolchain` |
