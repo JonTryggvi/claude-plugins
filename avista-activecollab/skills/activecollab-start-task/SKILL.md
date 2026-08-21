@@ -67,6 +67,24 @@ entities, so `2>&1` and `<2 items` come back exactly as written. A task whose de
 prose still works: tags are stripped and block boundaries become line breaks. A task with no description
 exits with a clear message rather than an empty brief.
 
+### First check it is actually a brief
+
+`activecollab-create-task` writes two kinds of description, and only one of them is a brief:
+
+```bash
+ac GET /projects/479/tasks/13375 \
+  | jq -r '"completed=\(.is_completed)  tracked=\(.tracked_time)h  estimate=\(.estimate)h"'
+```
+
+A task that is **already completed**, or already carries `tracked_time`, or whose description is a couple
+of past-tense sentences with no code block, is a **record** task — created after the fact so some hours
+had a parent. There is no work in it to start. Say so and ask what the user actually meant to open, rather
+than handing them a description of something that shipped last month as if it were an assignment.
+
+The same goes for a brief whose work has since been done by someone else: the prompt is still there and
+still reads like an instruction. Check `tracked_time` and `is_completed` before treating a description as
+live work.
+
 ## Step 3 — Confirm, then work
 
 Show the user the brief and the task metadata, and say plainly that it came from the task description.
@@ -94,3 +112,5 @@ planned it, and it is easier to say now than at invoicing.
 | Brief comes back as one run-on line | The description used `magic-only` (paragraphs, no code block). The text is intact but the line breaks were never stored. |
 | `.[]` fails listing tasks | `/projects/<id>/tasks` returns an object — use `.tasks[]`. |
 | HTTP 401 | Token dead — re-run `activecollab-setup`. |
+| Brief describes work that is already merged | It is a record task, or a brief someone already did. Check `is_completed` and `tracked_time`. |
+| The "brief" is two sentences of past tense | Record task — created to hold hours, not to be worked. |

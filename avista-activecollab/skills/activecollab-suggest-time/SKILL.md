@@ -1,6 +1,6 @@
 ---
 name: activecollab-suggest-time
-description: Suggest timesheet entries after finishing a feature — measures working time from the git log by grouping commits into sittings, finds candidate ActiveCollab tasks from the branch name, commit messages and repo, and proposes one time record per sitting for the user to confirm. Use when the user says "I finished this feature, log the time", "suggest time entries", "how long did this take", "what should I log for this", "find the task for this work", "estimate hours from git", or wraps up a piece of work and needs it on a timesheet. Measures rather than prices, states its basis, and refuses to guess when the commit history is a poor signal.
+description: Suggest timesheet entries after finishing a feature — measures working time from the git log by grouping commits into sittings, finds candidate ActiveCollab tasks from the branch name, commit messages and repo, and proposes one time record per sitting for the user to confirm. Creates a record-mode task to hang the hours on when no existing task matches. Use when the user says "I finished this feature, log the time", "suggest time entries", "how long did this take", "what should I log for this", "find the task for this work", "estimate hours from git", or wraps up a piece of work and needs it on a timesheet. Measures rather than prices, states its basis, and refuses to guess when the commit history is a poor signal.
 ---
 
 # Suggest time entries from git
@@ -9,7 +9,8 @@ After a feature lands, works out **what to log and against which task**. Produce
 confirms before anything is written.
 
 Requires `activecollab-setup`. Logging itself follows `activecollab-log-time` — this skill decides the
-numbers, that one writes them.
+numbers, that one writes them. For the reverse question — *what has already been logged, and does it match
+the work?* — use `activecollab-time-audit`.
 
 ## The house rule this implements
 
@@ -85,10 +86,32 @@ In priority order, stopping at the first that yields a confident hit:
    ac GET /projects/<id>/tasks \
      | jq -r '.tasks | sort_by(.updated_on) | reverse | .[] | select(.assignee_id==<uid>) | "\(.id)\t#\(.task_number)\t\(.name)"'
    ```
+   Note this lists **open** tasks; completed ones come back from that call as bare ids in
+   `.completed_task_ids`. Work that finished a while ago may well have a completed task already, and a
+   completed task still accepts time records.
+
+4. **Nothing matches — then create the task.** This is the common case for work that was never ticketed:
+   a fix that came up mid-session, a piece of maintenance, anything started before anyone wrote it down.
+   The hours still need a parent.
 
 Then match against what the commits actually say. Show the top few candidates with their task numbers and
 **let the user pick** — never auto-select. Getting the task wrong bills the right hours to the wrong
 client.
+
+### When no task exists
+
+Hand off to `activecollab-create-task` in **record mode** — the branch built for exactly this. It writes a
+short past-tense description of what was done, sets **no estimate** (there was never a plan; the hours go
+on the time record), and completes the task after posting so finished work does not sit on the board.
+
+Do **not** let it write a runnable prompt into the description. A prompt describing work that is already
+merged reads as open work to everyone who sees the project, and `activecollab-start-task` will hand it out
+as a live brief. Say "record mode" explicitly when you hand off, so step 0 of that skill does not have to
+infer it.
+
+Suggest the task name from the commit subjects, not from the branch name — `fix/rounding-2` is not a task
+title. One task per coherent piece of work, even when it spans several sittings; the sittings become
+separate time records against the same task.
 
 ## Step 4 — Propose, with the basis stated
 
@@ -112,6 +135,10 @@ is confirming a measurement, and they can only do that if they can see it.
 
 Then ask for confirmation, including whether it is billable and which job type.
 
+If the task already has hours on it, show them — `ac GET /projects/<id>/tasks/<task-id>` carries
+`tracked_time` (a direct task fetch only; it is absent from the task list). Proposing 4.25h against a task
+that already holds 4h of the same work is how time gets double-logged.
+
 ## Step 5 — Log it
 
 Hand off to `activecollab-log-time` for each confirmed sitting. In short: payload to a file (never inline
@@ -126,10 +153,15 @@ ac POST /projects/479/time-records "$(cat sitting-1.json)" \
 Log each sitting under its **own** `record_date`. Collapsing four days into one entry is wrong on a
 timesheet even when the total matches.
 
+If a record-mode task was created in step 3, complete it once the hours are in — see step 6 of
+`activecollab-create-task`. Completing it before the records are written means a failure mid-flow leaves a
+closed task with no hours on it.
+
 ## What this skill must never do
 
 - Present wall-clock session length as working time.
 - Log without a human confirming the numbers.
 - Produce a figure when `signal_quality` is `poor` or `none` — ask instead.
+- Write a runnable prompt into a task created for work that is already done.
 - Quote what the work "would cost" to build. That is a **quote**, a different question, and only when
   explicitly asked for one.
