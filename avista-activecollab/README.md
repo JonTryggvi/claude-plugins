@@ -14,7 +14,7 @@ find online about ActiveCollab authentication describes the *cloud* flow, which 
 | `activecollab-suggest-time` | Measure hours from the git log and propose entries against candidate tasks, creating one when none exists. |
 | `activecollab-time-audit` | Read logged time back (task / project / person / company over a window) and compare it against git-measured hours. Read-only. |
 | `activecollab-project-map` | Persist the repo → project mapping: clone-group paths, project id, default task and job type, explicit `private` flag. Resolved once, not monthly. |
-| `activecollab-reconcile-period` | Month-end: measure a whole window against what is logged, per project **and per date**, and propose the difference one record per sitting. |
+| `activecollab-reconcile-period` | Month-end: measure a whole window against what is logged, per project **and per date**, from git commits **and** Claude Code session attention, and propose the difference one record per sitting. |
 | `activecollab-evidence-sweep` | Find billable work with no git trace — support email, meetings, phone fixes — via the Gmail/calendar connectors, and ask for the hours. |
 | `activecollab-invoice-preflight` | Per client before billing: logged, billable-not-yet-invoiced, dates with commits but no time — and what it could not verify. Read-only. |
 | `avista-activecollab-overview` | What's in the box and which skill to run. |
@@ -303,6 +303,42 @@ Not an API note, but it costs more than any of the above. Four failure modes, al
 And a rule that is about honesty rather than mechanics: a sitting holding **one commit** has no span to
 measure, so it gets the lead-in allowance alone. That is a **floor**, not a measurement — reported
 separately (`single_commit_hours`), never folded into a total, never rounded up to look plausible.
+
+### Commits are a weak proxy; session logs are a better one
+
+Claude Code writes a session log per working directory under `~/.claude/projects/`, with a `timestamp` and
+`cwd` on every event. Applying the same sitting rule to those events instead of to commits, over a real
+three-week window in this repo:
+
+| Source | Hours |
+|---|---|
+| git commit sittings | 1.75h (`signal_quality: poor`) |
+| **Claude session attention** | **7.75h** |
+| actually logged | 20.55h |
+
+4.4× closer, for structural reasons: clustered and single commits measure almost nothing, while the session
+log recorded an event whenever anything happened. `scripts/session-time.sh` reads it, and
+`reconcile-period` uses whichever source measures a date higher, labelling which in `.dates[].basis`. Two
+dates that read `covered` on commits alone became `partial` once attention was counted.
+
+It is not an authority, and four things keep it honest:
+
+- **Still a lower bound.** Only work inside Claude Code leaves events — hence 7.75h against 20.55h logged.
+- **`wall_clock_hours`, not the per-project sum.** Two projects open in one stretch each claim that hour;
+  on a real month the union was **69.82h** where the sum was **147.0h**.
+- **`cwd` folds to `git rev-parse --git-common-dir`.** Subdirectory and worktree sessions belong to their
+  repository — unfolded, a real month showed 72 "projects" for 31, all overlapping each other.
+- **Grouping reads the `cwd` field, never the directory name.** The store mangles `/`, `.` and spaces all
+  to `-`, so the name cannot be reversed unambiguously.
+
+Sandboxed `local-agent-mode-sessions` are excluded — their `cwd` is a session sandbox, not a repo. And only
+`timestamp` and `cwd` are ever parsed: transcripts contain every prompt and credential discussed in them,
+and a reconciliation summary lands on a shared timesheet.
+
+There is deliberately **no start/stop timer**. A tracker you have to remember to start inherits the exact
+discipline problem that creates a month-end reconciliation, and a half-used timer is worse than commits —
+commits are a consistent undercount everyone treats as a floor, while a partly-used timer is a random
+undercount that looks exact.
 
 ### `billable_status` has four values, not two
 

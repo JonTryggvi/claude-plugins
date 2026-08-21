@@ -42,7 +42,7 @@
 set -uo pipefail
 export LC_ALL="${LC_ALL:-en_US.UTF-8}"
 
-FROM=""; TO=""; USER_ID=""; QUIET=0; ALLOW_BACKDATED=0
+FROM=""; TO=""; USER_ID=""; QUIET=0; ALLOW_BACKDATED=0; USE_SESSIONS=1
 AUTHORS=()
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 SITTINGS="${GIT_SITTINGS:-$HERE/../../activecollab-suggest-time/scripts/git-sittings.sh}"
@@ -53,11 +53,12 @@ usage() {
   cat >&2 <<'EOT'
 usage: reconcile-period.sh --from YYYY-MM-DD --to YYYY-MM-DD
                            --user AC_USER_ID --author GIT_IDENTITY [--author …]
-                           [--map FILE] [--allow-backdated] [--quiet]
+                           [--map FILE] [--allow-backdated] [--no-sessions] [--quiet]
 
   --user   ActiveCollab user id — the logged side is filtered to this person
   --author git name/email substring — repeatable, because people commit under
            several identities; the measured side is filtered to these
+  --no-sessions  skip Claude Code session attention; measure from commits alone
 
 Both are required. Filtering one side and not the other compares two different
 populations, so the delta would report colleagues' hours as this person's.
@@ -74,6 +75,7 @@ while [ $# -gt 0 ]; do
     --author=*) AUTHORS+=("${1#*=}"); shift ;;
     --map)    MAP="${2:-}"; shift 2 ;;
     --allow-backdated) ALLOW_BACKDATED=1; shift ;;
+    --no-sessions) USE_SESSIONS=0; shift ;;
     --quiet)  QUIET=1; shift ;;
     -h|--help) usage ;;
     *) echo "reconcile-period.sh: unknown argument '$1'" >&2; usage ;;
@@ -154,6 +156,32 @@ jq -r '.entries[]? | select((.private // false) | not) | @base64' < "$MAP" | whi
     < "$TMP/entry.json" >> "$TMP/measured.ndjson"
 done
 
+# --- attention: Claude Code's own session logs -------------------------------
+#
+# Commits are a weak proxy for time. A sitting whose commits cluster at the end
+# measures almost nothing, and a single-commit sitting measures only the lead-in
+# allowance — 0.25h for what was frequently an hour. The session log recorded an
+# event every time something happened, so it can replace those floors with an
+# actual span. Measured on a real three-week window in one repo: commits 1.75h,
+# sessions 7.75h, truly logged 20.55h — sessions were 4.4x closer.
+#
+# Still a LOWER bound, and a different KIND of measurement: it sees attention
+# inside Claude Code and nothing else. Every date it upgrades is labelled, so the
+# basis of each proposed record stays visible.
+echo '{"projects":[],"totals":{}}' > "$TMP/sessions.json"
+if [ "$USE_SESSIONS" = "1" ] && [ -f "$HERE/session-time.sh" ]; then
+  sesargs=()
+  while IFS= read -r p; do
+    [ -n "$p" ] || continue
+    git -C "$p" rev-parse --git-dir >/dev/null 2>&1 && sesargs+=(--repo "$p")
+  done < <(jq -r '.entries[]? | select((.private // false) | not) | (.repos // [])[]' < "$MAP")
+  if [ ${#sesargs[@]} -gt 0 ]; then
+    bash "$HERE/session-time.sh" --from "$FROM" --to "$TO" --map "$MAP" --quiet \
+      "${sesargs[@]}" > "$TMP/sessions.json" 2>/dev/null \
+      || echo '{"projects":[],"totals":{}}' > "$TMP/sessions.json"
+  fi
+fi
+
 # --- reduce -----------------------------------------------------------------
 python3 - "$TMP" "$FROM" "$TO" "$USER_ID" > "$TMP/out.json" <<'PY'
 import json, sys, io, os
@@ -172,6 +200,26 @@ def load(name, default=None):
 
 def r2(x):
     return round(float(x) + 0.0, 2)
+
+sessions_doc = load('sessions.json', {}) or {}
+session_by_pid = {}
+session_blocks_by_pid = {}
+for sp in (sessions_doc.get('projects') or []):
+    pid = sp.get('project_id')
+    if pid is None:
+        continue
+    d = session_by_pid.setdefault(pid, {})
+    for row in (sp.get('days') or []):
+        d[row['date']] = d.get(row['date'], 0.0) + float(row.get('hours') or 0)
+    bl = session_blocks_by_pid.setdefault(pid, {})
+    for b in (sp.get('blocks') or []):
+        bl.setdefault(b.get('date'), []).append({
+            'index': len(bl.get(b.get('date'), [])) + 1,
+            'start': b.get('start'), 'end': b.get('end'),
+            'events': b.get('events'), 'hours': float(b.get('hours') or 0),
+            'span_hours': b.get('span_hours'), 'single_commit': False,
+            'repos': [sp.get('cwd')], 'subjects': [],
+        })
 
 logged_doc = load('logged.json', {}) or {}
 records_doc = load('records.json', {}) or {}
@@ -215,6 +263,8 @@ with io.open(os.path.join(tmp, 'measured.ndjson'), encoding='utf-8') as fh:
 
 projects = []
 tot_measured = tot_logged = tot_proposed = tot_floor = 0.0
+tot_commits = tot_session = 0.0
+tot_upgraded = 0
 rows = uniq = dupes = backdated = 0
 mapped_pids = set()
 
@@ -246,10 +296,27 @@ for e in entries:
             'subjects': (s.get('subjects') or [])[:6],
         })
 
+    sess = session_by_pid.get(pid, {})
+    sess_blocks = session_blocks_by_pid.get(pid, {})
+
     dates = []
     proposed_here = 0.0
-    for d in sorted(set(list(by_date.keys()) + list(lg['dates'].keys()))):
-        meas = r2(by_date.get(d, {}).get('measured', 0.0))
+    upgraded_here = 0
+    for d in sorted(set(list(by_date.keys()) + list(lg['dates'].keys()) + list(sess.keys()))):
+        git_meas = r2(by_date.get(d, {}).get('measured', 0.0))
+        sess_h = r2(sess.get(d, 0.0))
+        floor_h = r2(by_date.get(d, {}).get('floor', 0.0))
+        # Both are lower bounds on the same day's work, so the larger is the
+        # better floor. Prefer the session span when it exceeds the commit span —
+        # that is precisely the single-commit / clustered-commit case the commit
+        # log cannot see. Record WHICH, so no proposal hides its basis.
+        if sess_h > git_meas:
+            meas, basis = sess_h, ('session' if git_meas == 0 else 'session>commits')
+            if git_meas > 0 and floor_h >= git_meas:
+                basis = 'session-replaced-floor'
+            upgraded_here += 1
+        else:
+            meas, basis = git_meas, ('commits' if git_meas > 0 else 'none')
         logd = r2(lg['dates'].get(d, {}).get('hours', 0.0))
         if meas > 0 and logd == 0:
             status = 'missing'
@@ -261,14 +328,19 @@ for e in entries:
             status = 'partial'
         row = {'date': d, 'measured_hours': meas, 'logged_hours': logd,
                'delta_hours': r2(logd - meas), 'status': status,
-               'floor_only_hours': r2(by_date.get(d, {}).get('floor', 0.0)),
+               'basis': basis,
+               'commit_hours': git_meas, 'session_hours': sess_h,
+               'floor_only_hours': floor_h,
                'sittings': by_date.get(d, {}).get('sittings', []),
+               'session_blocks': sess_blocks.get(d, []),
                'logged_records': lg['dates'].get(d, {}).get('records', [])}
         if status in ('missing', 'partial'):
-            proposed_here += (meas - logd)
+            proposed_here += max(0.0, meas - logd)
         dates.append(row)
 
-    meas_tot = r2(sum(float(s.get('hours') or 0) for s in sittings))
+    meas_tot = r2(sum(x['measured_hours'] for x in dates))
+    commit_tot = r2(sum(float(s.get('hours') or 0) for s in sittings))
+    session_tot = r2(sum(sess.values()))
     floor_tot = r2(m.get('single_commit_hours') or 0)
     log_tot = r2(lg['hours'])
     prop = r2(proposed_here)
@@ -283,6 +355,9 @@ for e in entries:
         'default_job_type_id': e.get('default_job_type_id'),
         'default_job_type': e.get('default_job_type'),
         'measured_hours': meas_tot,
+        'commit_measured_hours': commit_tot,
+        'session_attention_hours': session_tot,
+        'dates_upgraded_by_sessions': upgraded_here,
         'measured_floor_only_hours': floor_tot,
         'measured_excluding_floor_hours': r2(meas_tot - floor_tot),
         'logged_hours': log_tot,
@@ -307,6 +382,9 @@ for e in entries:
         'dates': dates,
     })
     tot_measured += meas_tot
+    tot_commits += commit_tot
+    tot_session += session_tot
+    tot_upgraded += upgraded_here
     tot_logged += log_tot
     tot_proposed += prop
     tot_floor += floor_tot
@@ -323,27 +401,61 @@ for pid, e in sorted(logged_by_project.items(), key=lambda kv: -kv[1]['hours']):
 
 # One proposal per sitting, under its own record_date. Collapsing a month into
 # one entry is wrong on a timesheet even when the total matches.
+# One record per sitting, but never more in total than the date is actually
+# short. A `partial` date already carries some of its hours, so proposing every
+# sitting on it would re-post what is already there — and where a date was
+# upgraded off session attention, the git sittings no longer describe its hours
+# at all. So: pick the sittings that match the basis the date was measured on,
+# then trim the run to the shortfall.
+def _units(date_row):
+    # Whichever measurement won for this date supplies the units, so a proposed
+    # record always corresponds to a real block of work on the basis claimed.
+    if date_row['basis'].startswith('session') and date_row['session_blocks']:
+        return date_row['session_blocks']
+    return date_row['sittings']
+
 proposals = []
 for p in projects:
     for d in p['dates']:
         if d['status'] not in ('missing', 'partial'):
             continue
-        for s in d['sittings']:
+        shortfall = round(max(0.0, d['measured_hours'] - d['logged_hours']), 2)
+        if shortfall <= 0:
+            continue
+        units = _units(d)
+        if not units:
+            units = [{'index': 1, 'hours': shortfall, 'commits': 0, 'span_hours': None,
+                      'single_commit': False, 'repos': [], 'subjects': []}]
+        remaining = shortfall
+        for s in units:
+            if remaining <= 0.001:
+                break
+            val = min(float(s.get('hours') or 0) or remaining, remaining)
+            val = round(round(val / 0.25) * 0.25, 2)
+            if val <= 0:
+                val = round(remaining, 2)
+            val = min(val, round(remaining, 2))
+            remaining = round(remaining - val, 2)
+            s = dict(s, hours=val)
             proposals.append({
                 'project_id': p['project_id'],
                 'project_name': p['project_name'],
                 'slug': p['slug'],
                 'record_date': d['date'],
                 'value': s['hours'],
+                'date_shortfall_hours': shortfall,
                 'task_id': p['default_task_id'],
                 'job_type_id': p['default_job_type_id'],
                 'billable_hint': ('will store non-billable — project budget_type is not_billable'
                                   if p['budget_type'] == 'not_billable' else 'billable as sent'),
-                'single_commit_floor': s['single_commit'],
-                'commits': s['commits'],
-                'span_hours': s['span_hours'],
-                'repos': s['repos'],
-                'suggested_summary': '; '.join(s['subjects'][:3]) or None,
+                'single_commit_floor': s.get('single_commit', False),
+                'basis': d['basis'],
+                'commit_hours_that_date': d['commit_hours'],
+                'session_hours_that_date': d['session_hours'],
+                'commits': s.get('commits'),
+                'span_hours': s.get('span_hours'),
+                'repos': s.get('repos') or [],
+                'suggested_summary': '; '.join((s.get('subjects') or [])[:3]) or None,
                 'date_already_has_logged_hours': d['logged_hours'] > 0,
                 'project_already_fully_covered': p['already_fully_covered'],
                 'duplicate_risk': p['already_fully_covered'],
@@ -359,6 +471,13 @@ if backdated > 0:
         "%d commit(s) landed in this window but were authored before %s — cherry-picked or late-landed "
         "older work, excluded so it stays on the period it was done in. Pass --allow-backdated to include them."
         % (backdated, FROM))
+if tot_upgraded:
+    warnings.append("%d date(s) measured higher from Claude Code session attention than from commits "
+                    "(%.2fh sessions vs %.2fh commits overall). Those dates use the session figure and are "
+                    "labelled in .dates[].basis. Sessions see attention inside Claude Code only, so this is "
+                    "still a lower bound — and it is a DIFFERENT kind of measurement from a commit span, so "
+                    "say which basis each proposed record rests on."
+                    % (tot_upgraded, tot_session, tot_commits))
 if tot_floor > 0:
     warnings.append(
         "%.2fh of the measured total comes from single-commit sittings across %d sitting(s). That is the "
@@ -406,6 +525,11 @@ out = {
         'note': 'measured and logged sides are both filtered to this one person, which is the only way '
                 'the difference means anything',
     },
+    'session_basis': 'attention blocks from Claude Code session event timestamps, same 45min gap and '
+                     '+15min lead-in. A date measured higher by sessions than by commits uses the session '
+                     'figure and is labelled in .dates[].basis — that is the clustered-commit and '
+                     'single-commit case, which the commit log structurally cannot see. Still a lower '
+                     'bound: work outside Claude Code leaves no session events.',
     'basis': 'measured = git commit sittings (45min gap, +15min lead-in, 0.25h rounding), SHA-deduplicated '
              'across each clone group, windowed on committer date with commits authored before --from '
              'excluded. logged = ActiveCollab time records in the window for this user. Reconciled per '
@@ -414,6 +538,10 @@ out = {
                'excluded_backdated': backdated},
     'totals': {
         'measured_hours': r2(tot_measured),
+        'commit_measured_hours': r2(tot_commits),
+        'session_attention_hours': r2(tot_session),
+        'session_wall_clock_hours': (sessions_doc.get('totals') or {}).get('wall_clock_hours'),
+        'dates_upgraded_by_sessions': tot_upgraded,
         'measured_floor_only_hours': r2(tot_floor),
         'measured_excluding_floor_hours': r2(tot_measured - tot_floor),
         'logged_hours': r2(tot_logged),
@@ -438,6 +566,7 @@ cat "$TMP/out.json"
 {
   jq -r '"reconcile  \(.window.from) .. \(.window.to)   ActiveCollab user \(.scope.activecollab_user_id)"' < "$TMP/out.json"
   jq -r '.totals | "  measured \(.measured_hours)h   logged \(.logged_hours)h   delta \(.delta_hours)h   proposed \(.proposed_hours)h across \(.proposals) record(s)"' < "$TMP/out.json"
+  jq -r '.totals | if .dates_upgraded_by_sessions > 0 then "  sessions: \(.session_attention_hours)h attention vs \(.commit_measured_hours)h from commits — \(.dates_upgraded_by_sessions) date(s) upgraded off session spans (wall clock \(.session_wall_clock_hours // "-")h)" else empty end' < "$TMP/out.json"
   jq -r '.dedupe | "  git: \(.commit_rows) rows -> \(.unique_commits) unique commits (\(.duplicate_rows) duplicates removed, \(.excluded_backdated) backdated excluded)"' < "$TMP/out.json"
   jq -r '.totals | if .measured_floor_only_hours > 0 then "  floor: \(.measured_floor_only_hours)h of the measured total is single-commit sittings — a floor, reported separately" else empty end' < "$TMP/out.json"
   jq -r '.totals | if .duplicate_risk_hours > 0.01 then "  ! DUPLICATE RISK: \(.duplicate_risk_hours)h of the \(.proposed_hours)h proposed is on project(s) already fully covered — walk those dates before proposing" else empty end' < "$TMP/out.json"

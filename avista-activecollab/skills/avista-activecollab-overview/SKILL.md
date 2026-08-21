@@ -22,7 +22,7 @@ Present this overview, then point the user at the right skill.
 | `activecollab-suggest-time` | Measures working time from the git log (commits grouped into sittings, SHA-deduplicated across clone groups, every identity a person commits under), finds candidate tasks — creating one when none exists — and proposes one entry per sitting. Refuses to guess when commits are a poor signal. | After finishing a feature, when you need to know what to log and against what. |
 | `activecollab-time-audit` | Reads logged time back — per task, project, person, or company over a date window — and compares it against git-measured hours to spot systematic under-logging. Read-only. | "How much is logged on this?" / "Are we under-logging?" |
 | `activecollab-project-map` | Persists the repo → project mapping: clone-group paths, project id, default task and job type, and an explicit `private` flag for repos that deliberately have no project. | **Once per repo**, then whenever `validate` reports drift. |
-| `activecollab-reconcile-period` | The month-end job: measures a whole window against what is logged, per project **and per date**, and proposes the difference one record per sitting. | Closing out a month or a period. |
+| `activecollab-reconcile-period` | The month-end job: measures a whole window against what is logged, per project **and per date**, from **two** sources — git commits and Claude Code session attention — and proposes the difference one record per sitting. | Closing out a month or a period. |
 | `activecollab-evidence-sweep` | Finds billable work with no git trace — support email, meetings, phone fixes — via the Gmail and calendar connectors, and asks for the hours. | The measured total is obviously too low. |
 | `activecollab-invoice-preflight` | Per client, before billing: what is logged, what is billable and not yet invoiced, which dates have commits but no time — and what it could not verify. | Billing day. |
 
@@ -111,6 +111,15 @@ Four more traps, all verified against the live instance, that decide whether a p
 | `billable_status` on write | Projects with `budget_type: not_billable` (7 of 213) store **`0`** whatever you send, silently. `is_billable` does not exist here — it reads `null`, so a check against it always passes. Read the record back. |
 | `GET /invoices` | **404** for a normal API token. There is no way to read invoices; `invoice_item_id != 0` on a time record is the only invoice signal available. |
 
+**There are three measurement sources, not one, and they are ranked.** Commits are a weak proxy for time:
+measured over a real three-week window in one repo, commit sittings gave **1.75h** (`signal: poor`), Claude
+Code's own session logs gave **7.75h**, and **20.55h** was really logged. So `reconcile-period` measures
+commits *and* session attention, uses whichever is higher per date, and labels which — because they are
+different kinds of evidence. Session attention needs no timer to remember (events only fire when work
+happens, so an idle gap closes the block by itself), but it sees only what happened inside Claude Code, so
+it too is a lower bound. Anything outside it — meetings, support mail, WP admin — is
+`activecollab-evidence-sweep`'s job, and that one asks rather than measures.
+
 Two more that bite the measuring side rather than the API: shared repos cloned into several sites make the
 same commit readable from several paths (dedupe by SHA, and measure a clone group as the **union** — the
 standalone checkout is often the copy that is *behind*), and `--since`/`--until` filter **committer** date,
@@ -185,8 +194,8 @@ Two habits the period skills enforce because getting them wrong is expensive and
 - **Both sides of any comparison must describe the same person.** Filtering the git side to one author
   while reading the whole team's timesheet reports colleagues' hours as that person's shortfall.
   `logging-gap.sh` and `reconcile-period.sh` now refuse to run half-filtered rather than produce a number.
-- **A floor is not a measurement.** A sitting with one commit gets the lead-in allowance alone (0.25h) and
-  is reported separately. It never gets folded into a headline or quietly rounded up to something more
+- **A floor is not a measurement.** A sitting with one commit gets the lead-in allowance alone (0.25h).
+  Session attention replaces most of these with a real span; what remains a floor is reported separately. It never gets folded into a headline or quietly rounded up to something more
   plausible — a guessed number on a timesheet is worse than a visibly conservative one, because nobody
   knows to question it.
 

@@ -1,6 +1,6 @@
 ---
 name: activecollab-reconcile-period
-description: Reconcile a whole date window against ActiveCollab — measures every mapped repo over the period, reads back what is already logged, compares per project AND per date, and proposes one time record per sitting for the difference. Use when the user says "reconcile last month", "month-end reconciliation", "what did I not log in July", "close out the period", "catch up my timesheet for the month", "reconcile the period before invoicing", "I need to log a month of work", "find everything I worked on but never logged", or has a window of hours to settle rather than one feature. Deduplicates shared repos cloned into several sites by SHA, excludes cherry-picked older work, reports single-commit sittings separately as a floor, and refuses to propose a record on a date whose hours are already covered by an over-covering correction. Never posts without showing the user every record first. For a single feature use activecollab-suggest-time; for a read-only look at logged hours use activecollab-time-audit.
+description: Reconcile a whole date window against ActiveCollab — measures every mapped repo over the period from both git commits and Claude Code session attention, reads back what is already logged, compares per project AND per date, and proposes one time record per sitting for the difference. Use when the user says "reconcile last month", "month-end reconciliation", "what did I not log in July", "close out the period", "catch up my timesheet for the month", "reconcile the period before invoicing", "I need to log a month of work", "find everything I worked on but never logged", or has a window of hours to settle rather than one feature. Deduplicates shared repos cloned into several sites by SHA, excludes cherry-picked older work, replaces single-commit floors with real session spans where one covers the date, reports what is still a floor separately, and refuses to propose a record on a date whose hours are already covered by an over-covering correction. Never posts without showing the user every record first. For a single feature use activecollab-suggest-time; for a read-only look at logged hours use activecollab-time-audit.
 ---
 
 # Reconcile a period
@@ -103,7 +103,85 @@ Two related rules the script applies, both reported:
   weeks earlier, and that work belongs on the earlier invoice. `--allow-backdated` keeps them if the user
   decides otherwise; say which way you ran it.
 
-## Step 4 — Reconcile per date, not per project total
+## Step 4 — Read attention alongside commits
+
+Commits are a weak proxy for time, and the script now measures a second way: **Claude Code's own session
+logs**. Measured on a real three-week window in this repo:
+
+| Source | Hours | |
+|---|---|---|
+| git commit sittings | 1.75h | `signal_quality: poor` |
+| **Claude session attention** | **7.75h** | 4.4× closer |
+| actually logged | 20.55h | |
+
+The reason is structural rather than lucky. A sitting whose commits cluster at the end measures almost
+nothing, and a single-commit sitting measures only the lead-in allowance — 0.25h for what was frequently an
+hour. The session log recorded an event every time anything happened, so it can put a real span where the
+commit log could only offer a floor.
+
+```bash
+bash "<this-skill-dir>/scripts/session-time.sh" --from 2026-07-01 --to 2026-07-31 --map ~/.claude/activecollab-project-map.json
+```
+
+`reconcile-period.sh` runs this itself; `--no-sessions` turns it off. Where a date measures higher from
+sessions than from commits, the session figure is used and the date is **labelled** in `.dates[].basis`:
+
+| `basis` | Meaning |
+|---|---|
+| `commits` | Commit spans measured this date. |
+| `session>commits` | Sessions measured more; the session figure is used. |
+| `session` | No commits at all on this date, but there was a session. |
+| `session-replaced-floor` | The commit measurement was pure lead-in floor; a real span replaced it. |
+| `none` | Neither. Nothing to propose. |
+
+```bash
+jq -r '.projects[].dates[] | "\(.date)  commits \(.commit_hours)h  sessions \(.session_hours)h  -> \(.measured_hours)h  [\(.basis)]"' recon.json
+```
+
+This changes conclusions, not just numbers. On the test window two dates that read `covered` under
+commit-only measurement became `partial` once attention was counted — genuine shortfalls the commit log
+had hidden.
+
+### What attention is and is not
+
+Say this plainly whenever you quote a session-derived figure, because it is a **different kind** of
+measurement from a commit span and the two must not be blurred into one total:
+
+- **It is still a lower bound.** Work in an editor, a browser, WP admin, a meeting or on the phone leaves
+  no session events. That is why 7.75h still fell far short of the 20.55h really logged.
+- **It measures attention, not billability.** A session open while you read documentation is real work; a
+  session whose events are a background command running for two hours is not. Blocks over
+  `MAX_BLOCK_HOURS` (default 8) are flagged for exactly this.
+- **An idle session does not inflate it.** Events only fire when something happens, so a gap over 45
+  minutes closes the block by itself. There is no timer to forget to stop — which is the whole reason this
+  source is trustworthy in a way a manual tracker would not be.
+- **Per-project hours do not add up to wall clock.** Two projects open in the same stretch each claim that
+  hour. `session-time.sh` reports `wall_clock_hours` (the union of all blocks) next to the per-project sum
+  — on a real month those were **69.82h** and **147.0h**. Quote the union as the headline and treat the
+  split as an attribution question, never as arithmetic.
+
+### Two things the script normalises, both reported
+
+- **Subdirectories and worktrees fold into their repository.** A session opened in
+  `skills/foo/scripts` is the same project as one opened in the repo root; counted separately they
+  fragment one project into dozens of entries that then "overlap" with each other. Resolution uses
+  `git rev-parse --git-common-dir`, not `--show-toplevel`, so a worktree folds back onto the project it
+  branched from. On a real month this collapsed 72 directories to 31.
+- **Grouping is on the `cwd` field inside the log, never the directory name.** The store mangles `/`, `.`
+  and spaces all to `-`, so `claude-smalls/Avista Plugins` and `claude-smalls-Avista-Plugins` are
+  indistinguishable once mangled. Only the recorded `cwd` is authoritative.
+
+Sandboxed sessions under `local-agent-mode-sessions` are deliberately excluded: their `cwd` is a session
+sandbox or an outputs folder, not a repo, so counting them would invent attribution.
+
+### Never read session content
+
+Only `timestamp` and `cwd` are parsed. Session transcripts hold every prompt, file, and credential ever
+discussed in them — a reconciliation summary goes onto a shared timesheet, so message content must never
+be read, quoted, or summarised into one. If you find yourself wanting a session's text to describe a
+record, take the description from the commit subjects or ask the user.
+
+## Step 5 — Reconcile per date, not per project total
 
 **This is the step that stops a duplicate.** Subtracting a project's logged total from its measured total
 tells you a number and hides where it came from.
@@ -159,7 +237,7 @@ opposite things:
 Say which one you think it is, show the dates it rests on, and let the user decide. Never resolve it
 silently in either direction.
 
-## Step 5 — Report single-commit sittings separately, as a floor
+## Step 6 — Report what is still a floor, as a floor
 
 ```bash
 jq '.totals | {measured_hours, measured_floor_only_hours, measured_excluding_floor_hours}' recon.json
@@ -170,6 +248,11 @@ A sitting with one commit has no span to measure, so it gets the lead-in allowan
 
 On the reference run this was **36 of 90 sittings, credited 9.00h in total.** Folding that into a headline
 would present 9h of floors as 9h of measurement.
+
+Session attention (step 4) now rescues most of these: where a session covers the date, the floor is
+replaced by a real span and the date reads `session-replaced-floor`. What remains a floor is a date with a
+single commit and **no** session — work done outside Claude Code, which nothing here can measure. Those
+are the ones to list.
 
 So keep it out of the total you present, and list them so the user can raise the ones they remember:
 
@@ -185,7 +268,7 @@ Never quietly inflate a floor to something more plausible. A guessed number on a
 visibly conservative one, because nobody knows to question it. And never present the floor total as
 measured time — say *"at least 9.00h, which is an undercount"*.
 
-## Step 6 — Propose, one record per sitting, and show every one
+## Step 7 — Propose, one record per sitting, and show every one
 
 ```bash
 jq -r '.proposals[] | "\(.record_date)  \(.value)h  project \(.project_id)  task \(.task_id // "NONE")  \(if .duplicate_risk then "DUP-RISK" else "" end)  \(.suggested_summary // "")"' recon.json
@@ -195,6 +278,13 @@ jq -r '.proposals[] | "\(.record_date)  \(.value)h  project \(.project_id)  task
 a timesheet even when the total matches — the entries are what someone reads when a line item is queried
 six months later. Where two sittings fall on the same date, two records is the honest default; offer to
 merge them if the user would rather see one line, but do not merge across dates.
+
+A "sitting" is whichever unit the date was actually measured on: commit sittings where the basis is
+`commits`, session blocks where it is session-derived. And the proposals for a date are **trimmed to that
+date's shortfall** (`measured - logged`), so a `partial` date proposes only what is missing rather than
+re-posting hours already there. Each proposal carries `basis`, `commit_hours_that_date` and
+`session_hours_that_date`, so the provenance of every number is visible — and the proposals sum exactly to
+`totals.proposed_hours`. If they ever do not, something is wrong; say so rather than posting.
 
 Every proposal needs a task and a job type before it can be written:
 
@@ -237,7 +327,7 @@ Post these 6 records? (nothing has been written yet)
 **Nothing is written before that answer.** Time records feed invoicing, and this skill proposes numbers it
 derived rather than numbers the user stated — which is exactly why the human has to see each one.
 
-## Step 7 — Post, then verify by re-reading
+## Step 8 — Post, then verify by re-reading
 
 Hand each approved record to `activecollab-log-time`. Payload to a **file** — the shell runs under
 `LC_CTYPE="C"` and Icelandic summaries break as inline arguments — and set `LC_ALL=en_US.UTF-8` for the
@@ -274,6 +364,10 @@ reconciliation re-run from the top double-posts the first half.
 - Multiply a gap by an hourly rate. Measure, do not price — and unlogged hours are not automatically
   billable hours.
 - Include commits authored before the window without saying that is what it did.
+- Blur session attention and commit spans into one undifferentiated "measured" figure. They are different
+  kinds of evidence; every date and every proposal carries its `basis` for a reason.
+- Add per-project session hours together and present the sum as time worked. Use `wall_clock_hours`.
+- Read, quote or summarise session transcript **content**. Timestamps and `cwd` only.
 
 ## Failure modes
 
@@ -288,3 +382,8 @@ reconciliation re-run from the top double-posts the first half.
 | Records posted but the audit total did not move | Wrong `record_date`, or they landed on a project outside the window filter. Re-read before assuming. |
 | A billable record reads back non-billable | The project is `budget_type: not_billable`. An override, not an error — report it. |
 | `total 0.00` anywhere in the flow | `/usr/sbin/ac` answered. Nothing is logged looks identical to nothing was read. |
+| Session hours are 0 everywhere | The store is elsewhere — set `CLAUDE_SESSION_STORE`. Or the work genuinely happened outside Claude Code. |
+| Session hours look implausibly high | Check for blocks flagged `over_max_block` — a long background command reads as attention. |
+| Per-project session hours sum far above the month | Expected when projects were open in parallel. Use `wall_clock_hours`. |
+| One project fragmented into many entries | Pre-0.5.0 behaviour; `cwd` now folds to the git common dir. If it persists, the paths are not in a repo. |
+| A session in a worktree counted as its own project | Resolution uses `--git-common-dir`; `--show-toplevel` would do that. |
