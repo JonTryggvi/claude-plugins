@@ -156,7 +156,7 @@ The token reaches curl through a config file on a pipe rather than an argument, 
 bash tests/run-tests.sh
 ```
 
-83 assertions against fixtures — no network, no ActiveCollab, no mailbox, no calendar, nothing written
+101 assertions against fixtures — no network, no ActiveCollab, no mailbox, no calendar, nothing written
 outside a temp directory. The shipped scripts run unmodified: they are pointed at
 [`tests/fake-ac`](tests/fake-ac) through the `AC_BIN` seam they already have.
 

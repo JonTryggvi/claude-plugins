@@ -6,7 +6,7 @@ bash tests/run-tests.sh trashed      # only tests whose section matches
 bash tests/run-tests.sh idempotent
 ```
 
-83 assertions, no network. Nothing reads ActiveCollab, nobody's mailbox, nobody's calendar, and nothing is
+101 assertions, no network. Nothing reads ActiveCollab, nobody's mailbox, nobody's calendar, and nothing is
 written outside a `mktemp -d` that is removed on exit.
 
 ## Why this exists
@@ -57,6 +57,31 @@ reason the fixtures are shaped the way they are:
 | `time-records.json` record 16208 | Hours on project 901, which is absent from `/projects` — real hours, unattributable. |
 | `gmail-threads.json` | A thread that matches `from:me` with **no `SENT` message in the sample**, which is why thread presence is not evidence of a reply. |
 | `calendar-events.json` | An accepted meeting, a **declined** one, and a personal appointment. |
+
+## The neighbouring-date duplicate
+
+`run-tests.sh neighbour` is worth reading on its own, because it is the one duplicate a per-date comparison
+**cannot** see, and the test states the whole shape:
+
+| Date | measured | logged | status |
+|---|---|---|---|
+| 2026-08-12 | 0.75h | 0h | `missing` → **proposed** |
+| 2026-08-13 | 0.5h | 3.5h | `covered` |
+
+The 13th's record itemises both days, so the 12th's hours are already paid for — but the 12th genuinely
+holds no record, so per-date logic proposes it and the client pays twice. Nothing date-by-date can tell the
+difference; the hours are inside another date's prose.
+
+So two independent guards are asserted, and both fire:
+
+1. **`duplicate_risk`** — the project's logged total (5.0h) already exceeds its measured total (1.25h), so
+   `already_fully_covered` is true and every remaining proposal on it is flagged. A heuristic, not a proof.
+2. **The trashed-record signal** — a previous run already deleted records on that date, which is evidence a
+   human judged it. `needs_confirmation_reason` carries it.
+
+Then the durable fix, exercised through the real `project-map.sh decide`: after recording the decision the
+date reads `settled-by-decision`, is not proposed, and **stays** unproposed on a third run. That last
+assertion is the point of recording anything at all.
 
 ## Adding a test
 

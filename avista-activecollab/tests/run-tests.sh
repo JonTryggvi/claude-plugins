@@ -360,6 +360,104 @@ if want connector; then
   echo
 fi
 
+# ------------------------------------------- neighbouring-date duplicate -----
+# The duplicate a per-date comparison structurally CANNOT catch.
+#
+# Real shape, from the 2026-08-21 run: 2.00h was posted to Fraktlausnir on
+# 2026-08-12, then recognised as already covered by the 3.50h record of
+# 2026-08-13 which itemises the same two days of work, and trashed. The 13th is
+# `covered` — its record over-covers its own date. The 12th holds no record at
+# all, so per-date logic calls it `missing` and proposes it. Posting that pays
+# twice for the same afternoon.
+#
+# Nothing in a date-by-date read can see this: the 12th really is unlogged, and
+# the fact that its hours are sitting inside the 13th's record is only visible in
+# the prose of a summary. So there are two guards, and this asserts both:
+#
+#   1. duplicate_risk — the project's logged total already covers its measured
+#      total, so any date that still looks empty is suspect. A heuristic, and it
+#      fires here.
+#   2. the trashed-record signal — the previous run's removal is itself evidence
+#      that a human already judged this date.
+#
+# Then the durable fix: record the decision and the date stops being asked about.
+if want neighbour; then
+  echo "neighbouring-date duplicate (the case per-date logic cannot see)"
+  RP="$SK/activecollab-reconcile-period/scripts/reconcile-period.sh"
+  PM="$SK/activecollab-project-map/scripts/project-map.sh"
+
+  # A repo with work on the 12th and the 13th only, so the arithmetic is exact.
+  REPO_N="$WORK/repo-neighbour"; mkgit "$REPO_N"
+  commit_at "$REPO_N" "2026-08-12T11:34:00+0000" "fix: work on the 12th"
+  commit_at "$REPO_N" "2026-08-12T12:01:00+0000" "fix: more on the 12th"
+  commit_at "$REPO_N" "2026-08-13T09:00:00+0000" "feat: work on the 13th"
+  commit_at "$REPO_N" "2026-08-13T10:30:00+0000" "feat: more on the 13th"
+
+  NMAP="$WORK/map-neighbour.json"
+  jq -n --arg r "$REPO_N" '{version:1, updated:"2026-08-21", entries:[
+    {slug:"fraktlausnir", repos:[$r], project_id:489, project_name:"Fraktlausnir.is",
+     default_job_type_id:1, default_job_type:"Programming", budget_type:"pay_as_you_go"}]}' > "$NMAP"
+
+  # --- before: no decision recorded, so the trap is live -------------------
+  AC_PROJECT_MAP="$NMAP" bash "$RP" --from 2026-08-01 --to 2026-08-31 --user 6 \
+    --author jontryggvi@avista.is --quiet > "$WORK/nb1.json" 2>/dev/null
+
+  d12=$(jq -r '.projects[0].dates[]|select(.date=="2026-08-12")|.status' "$WORK/nb1.json")
+  d13=$(jq -r '.projects[0].dates[]|select(.date=="2026-08-13")|.status' "$WORK/nb1.json")
+  check "the 13th reads covered (its record over-covers its own date)" "$d13" "covered"
+  check "the 12th reads missing even though its hours are inside the 13th" "$d12" "missing"
+  check "the 12th holds no record of its own" \
+    "$(jq -r '.projects[0].dates[]|select(.date=="2026-08-12")|.logged_hours == 0' "$WORK/nb1.json")" "true"
+
+  check "per-date logic does propose it — that is the trap" \
+    "$(jq -r '[.proposals[]|select(.record_date=="2026-08-12")]|length' "$WORK/nb1.json")" "1"
+
+  # guard 1: the project is already covered in aggregate, so the proposal is suspect
+  check "project is flagged already_fully_covered" \
+    "$(jq -r '.projects[0].already_fully_covered' "$WORK/nb1.json")" "true"
+  check "the proposal carries duplicate_risk" \
+    "$(jq -r '[.proposals[]|select(.record_date=="2026-08-12")][0].duplicate_risk' "$WORK/nb1.json")" "true"
+  check "every proposed hour is counted as duplicate risk" \
+    "$(jq -r '.totals.duplicate_risk_hours == .totals.proposed_hours' "$WORK/nb1.json")" "true"
+  checkc "the report names DUPLICATE RISK" \
+    "$(jq -r '.warnings|join(" ")' "$WORK/nb1.json")" "DUPLICATE RISK"
+
+  # guard 2: the previous run's deletion is independent evidence about this date
+  check "the trashed-record signal fires on the same date" \
+    "$(jq -r '[.proposals[]|select(.record_date=="2026-08-12" and .trashed_on_this_date_hours > 0)]|length' "$WORK/nb1.json")" "1"
+  checkc "and explains why confirmation is needed" \
+    "$(jq -r '[.proposals[]|select(.record_date=="2026-08-12")][0].needs_confirmation_reason' "$WORK/nb1.json")" "pays twice"
+
+  # --- the durable fix: record the judgement call, through the real command --
+  AC_PROJECT_MAP="$NMAP" bash "$PM" decide --slug fraktlausnir --date 2026-08-12 \
+    --action never_propose \
+    --reason "already inside record 16112 of 2026-08-13, which itemises it" >/dev/null 2>&1
+  check "decide records it" "$?" "0"
+
+  AC_PROJECT_MAP="$NMAP" bash "$RP" --from 2026-08-01 --to 2026-08-31 --user 6 \
+    --author jontryggvi@avista.is --quiet > "$WORK/nb2.json" 2>/dev/null
+
+  check "the 12th is now settled by decision" \
+    "$(jq -r '.projects[0].dates[]|select(.date=="2026-08-12")|.status' "$WORK/nb2.json")" "settled-by-decision"
+  check "it is no longer proposed" \
+    "$(jq -r '[.proposals[]|select(.record_date=="2026-08-12")]|length' "$WORK/nb2.json")" "0"
+  check "nothing at all is proposed now" \
+    "$(jq -r '.totals.proposed_hours == 0' "$WORK/nb2.json")" "true"
+  check "duplicate risk is gone with it" \
+    "$(jq -r '.totals.duplicate_risk_hours == 0' "$WORK/nb2.json")" "true"
+  check "the applied decision is reported, not silent" \
+    "$(jq -r '.decisions_applied|length' "$WORK/nb2.json")" "1"
+  checkc "with the reason it was decided for" \
+    "$(jq -r '.decisions_applied[0].reason' "$WORK/nb2.json")" "itemises it"
+
+  # and it stays fixed on a third run — the point of recording it
+  AC_PROJECT_MAP="$NMAP" bash "$RP" --from 2026-08-01 --to 2026-08-31 --user 6 \
+    --author jontryggvi@avista.is --quiet > "$WORK/nb3.json" 2>/dev/null
+  check "still settled on a later run" \
+    "$(jq -r '[.proposals[]|select(.record_date=="2026-08-12")]|length' "$WORK/nb3.json")" "0"
+  echo
+fi
+
 # ------------------------------------------------------- idempotency ---------
 # The question this answers: a run posts records and is then forgotten. Does a
 # fresh session propose them again?
