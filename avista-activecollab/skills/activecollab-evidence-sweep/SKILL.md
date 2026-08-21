@@ -103,6 +103,10 @@ conclusion about a period they are about to invoice.
 The evidence of work is the user's **own reply**, not mail arriving. An unanswered request is not work; a
 reply is a person having spent time on something.
 
+Being CC'd on a colleague's thread is not work either, and this is where a naive read goes wrong: on a real
+mailbox most threads matching `from:me` for a month turned out to be ones where colleagues corresponded and
+the user was copied. Those are not billable minutes for this person.
+
 ```
 from:me after:2026/07/01 before:2026/08/01
 ```
@@ -110,7 +114,32 @@ from:me after:2026/07/01 before:2026/08/01
 `gap-dates.sh` prints this query pre-built as `gmail_query_hint`. Note the upper bound is **exclusive**,
 so it is the day after `--to`, and Gmail wants slash-separated dates.
 
-Then, for each reply that lands on a gap date:
+### `from:me` matches THREADS, so read the messages, not the thread
+
+This one will mislead you if you take the result at face value. Gmail matches at **thread** level and the
+returned message list is a **sample**, so a `from:me` search returns threads in which no message from the
+user appears in what you were handed at all. Verified on a real mailbox: of 20 threads returned for one
+month of `from:me`, several showed five messages, every one of them inbound.
+
+So a thread appearing in the results is **not** evidence that the user replied, and certainly not evidence
+of the date they replied on. What counts is a message whose `labelIds` contains **`SENT`** — take that
+message's own `date`, and ignore the thread's:
+
+```
+thread 1a023f82…  →  message 1a023fba…  labelIds [SENT]  2026-08-21T11:01Z   ← this is the evidence
+                     message 1a023f82…  labelIds [INBOX]                     ← this is not
+```
+
+If a thread looks relevant but shows no `SENT` message, fetch it with `get_thread` before concluding
+either way — the reply may simply be outside the sample. Do not infer a reply from the thread's presence,
+and do not attribute a reply to a thread date.
+
+`THREAD_VIEW_METADATA_ONLY` is enough for this — it returns senders, recipients, dates and `labelIds`
+without subjects or snippets. Prefer it while narrowing, and only reach for `THREAD_VIEW_MINIMAL` (which
+adds subject and snippet) on the handful of threads that land on a gap date and need describing. Less of
+the mailbox in context is the right default when the output goes onto a shared timesheet.
+
+Then, for each **`SENT` message** that lands on a gap date:
 
 - Note the **date** and the **thread subject**.
 - Work out **who the client is** and which ActiveCollab project that maps to — the mapping in
@@ -129,7 +158,10 @@ Meetings are billable management time and **never** have commits, which makes th
 under-logged category in the plugin's whole surface area.
 
 For each event on a gap date, note the date, the title, its scheduled start and end, and whether the user
-**accepted or attended** — an invitation they declined or ignored is not work. Then treat the booked length
+**accepted or attended** — an invitation they declined or ignored is not work. The attendee entry carrying
+`self: true` is the user's own; read its `responseStatus` (`accepted`, `declined`, `needsAction`). A real
+example, on a date with no commits and no logged time: *"🐦‍🔥 Avista Core - Roadmap Sync", 12:00–12:30,
+`responseStatus: accepted`* — 30 minutes booked, which is a question to ask, not 0.5h to log. Then treat the booked length
 as a starting question, per rule 1 above.
 
 Watch for events that are not work at all: personal appointments, all-day markers, holidays, blocked focus
@@ -195,7 +227,9 @@ one that merely looks precise. `activecollab-reconcile-period` step 7 covers the
 
 | Symptom | Cause |
 |---|---|
-| Every gap date has "evidence" | The mail query was not narrowed to client threads the user replied to. Notifications and internal mail are not work. |
+| Every gap date has "evidence" | The mail query was not narrowed to client threads the user replied to. Notifications, internal mail and threads they were merely CC'd on are not work. |
+| A reply is attributed to a date the user did not write on | The thread's date was used instead of the `SENT` message's own date. |
+| A thread matched `from:me` but holds no reply | Gmail matches threads and samples the messages. Check `labelIds` for `SENT`; fetch the thread if it looks relevant. |
 | A confident hour figure with no source named | A duration was derived from the evidence instead of asked for. Go back and ask. |
 | The sweep found nothing and the period still looks short | Check whether the connectors actually answered. Unavailable and empty look identical in a summary. |
 | A meeting logged at 1.0h that ran 20 minutes | The booking was treated as the measurement. It is a question, not a figure. |
