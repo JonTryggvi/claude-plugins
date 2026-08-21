@@ -1,0 +1,8 @@
+[
+ {"id":489,"name":"Fraktlausnir.is","company_id":202,"budget_type":"pay_as_you_go","is_billable":true,"is_tracking_enabled":true,"is_completed":false},
+ {"id":487,"name":"Reykvc.is","company_id":333,"budget_type":"pay_as_you_go","is_billable":true,"is_tracking_enabled":true,"is_completed":false},
+ {"id":456,"name":"Avista Auth","company_id":1,"budget_type":"pay_as_you_go","is_billable":true,"is_tracking_enabled":true,"is_completed":false},
+ {"id":154,"name":"Avista Connect","company_id":1,"budget_type":"not_billable","is_billable":false,"is_tracking_enabled":true,"is_completed":false},
+ {"id":428,"name":"Avista Commerce","company_id":1,"budget_type":"pay_as_you_go","is_billable":false,"is_tracking_enabled":true,"is_completed":false},
+ {"id":479,"name":"Avista Core - Plugin Development Overview","company_id":1,"budget_type":"pay_as_you_go","is_billable":true,"is_tracking_enabled":true,"is_completed":false}
+]

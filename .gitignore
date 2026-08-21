@@ -32,3 +32,4 @@ __pycache__/
 .env.local
 **/.env
 **/.env.local
+avista-activecollab/tests/fixtures/.next-record-id

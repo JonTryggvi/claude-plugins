@@ -1,0 +1,12 @@
+{"accessRole":"owner","events":[
+ {"id":"ev1","summary":"Avista Core - Roadmap Sync","eventType":"DEFAULT",
+  "start":{"dateTime":"2026-08-03T12:00:00+02:00"},"end":{"dateTime":"2026-08-03T12:30:00+02:00"},
+  "attendees":[{"email":"jontryggvi@avista.is","responseStatus":"accepted","self":true},
+               {"email":"david@avista.is","responseStatus":"accepted","organizer":true}]},
+ {"id":"ev2","summary":"Declined vendor pitch","eventType":"DEFAULT",
+  "start":{"dateTime":"2026-08-03T15:00:00+02:00"},"end":{"dateTime":"2026-08-03T16:00:00+02:00"},
+  "attendees":[{"email":"jontryggvi@avista.is","responseStatus":"declined","self":true}]},
+ {"id":"ev3","summary":"Dentist","eventType":"DEFAULT",
+  "start":{"dateTime":"2026-08-06T09:00:00+02:00"},"end":{"dateTime":"2026-08-06T10:00:00+02:00"},
+  "attendees":[{"email":"jontryggvi@avista.is","responseStatus":"accepted","self":true}]}
+]}

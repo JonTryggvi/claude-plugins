@@ -1,0 +1,11 @@
+{
+  "single": {
+    "id": 456,
+    "name": "Avista Auth",
+    "company_id": 1,
+    "budget_type": "pay_as_you_go",
+    "is_billable": true,
+    "is_tracking_enabled": true,
+    "is_completed": false
+  }
+}

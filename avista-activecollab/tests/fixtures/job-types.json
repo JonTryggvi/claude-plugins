@@ -1,0 +1,3 @@
+[{"id":1,"name":"Programming","is_default":true,"default_hourly_rate":18000},
+ {"id":6,"name":"Management","is_default":false,"default_hourly_rate":22000},
+ {"id":7,"name":"Design","is_default":true,"default_hourly_rate":18000}]

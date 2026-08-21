@@ -1,0 +1,115 @@
+#!/usr/bin/env bash
+#
+# fake-ac — a stand-in for the `ac` client that serves fixtures from disk.
+#
+# Every script in this plugin resolves its client through AC_BIN, so pointing
+# that at this file exercises the real code with no network and no live data:
+#
+#   AC_BIN=tests/fake-ac bash skills/.../trashed-records.sh --projects 489
+#
+# Route -> fixture mapping (all under $AC_FIXTURES, default tests/fixtures):
+#
+#   GET    /time-records?from&to          time-records.json
+#   GET    /trash                         trash.json
+#   GETALL /projects                      projects.json
+#   GET    /projects/<id>                 project-<id>.json
+#   GET    /projects/<id>/time-records    time-records-<id>.json
+#   GET    /projects/<p>/time-records/<r> record-<p>-<r>.json
+#   GET    /projects/<id>/tasks           tasks-open-<id>.json
+#   GET    /projects/<id>/tasks/archive   tasks-archive-<id>.json
+#   GET    /projects/<p>/tasks/<t>        task-<p>-<t>.json
+#   GET    /job-types                     job-types.json
+#   GET    /companies                     companies.json
+#   GET    /users                         users.json
+#   GET    /invoices                      -> 404, because that is what the real
+#                                            instance does for an API token
+#
+# A missing fixture exits 22 with a 404 message, mirroring how the real client
+# surfaces an HTTP error — so "no fixture" behaves like "no such object" rather
+# than like an empty success, which is the failure shape this plugin cares about.
+#
+# POST /projects/<id>/time-records is SYNTHESISED rather than canned, so the
+# write path can be tested honestly: the response echoes the payload back with
+# an id, EXCEPT that a project whose fixture says budget_type=not_billable has
+# billable_status forced to 0 — reproducing the silent coercion that the real
+# instance performs. Posted payloads are appended to $AC_POST_SPOOL if set, so a
+# test can assert on what was sent.
+#
+set -uo pipefail
+FIX="${AC_FIXTURES:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fixtures}"
+method="${1:-}"; path="${2:-}"; body="${3-}"
+
+[ -n "$method" ] && [ -n "$path" ] || { echo "usage: fake-ac METHOD PATH [json]" >&2; exit 64; }
+case "$path" in /*) : ;; *) path="/$path" ;; esac
+
+serve() { # fixture-file
+  if [ -f "$FIX/$1" ]; then cat "$FIX/$1"; exit 0; fi
+  echo "curl: (22) The requested URL returned error: 404" >&2
+  echo "fake-ac: no fixture $1 for $method $path" >&2
+  exit 22
+}
+
+bare="${path%%\?*}"                       # strip the query string
+IFS='/' read -r _ p1 p2 p3 p4 <<< "$bare"
+
+if [ "$method" = "POST" ] && [ "$p1" = "projects" ] && [ "$p3" = "time-records" ]; then
+  [ -n "$body" ] || { echo "fake-ac: POST with no body" >&2; exit 64; }
+  [ -n "${AC_POST_SPOOL:-}" ] && printf '%s\n' "$body" >> "$AC_POST_SPOOL"
+  bt=""
+  [ -f "$FIX/project-$p2.json" ] && bt=$(jq -r '(.single // .) | .budget_type // ""' < "$FIX/project-$p2.json")
+  nextid=$(cat "$FIX/.next-record-id" 2>/dev/null || echo 90001)
+  printf '%s' "$((nextid + 1))" > "$FIX/.next-record-id" 2>/dev/null || true
+  printf '%s' "$body" | jq --argjson id "$nextid" --argjson pid "$p2" --arg bt "$bt" '
+    . as $sent
+    | {single: ({
+        id: $id, project_id: $pid,
+        value: ($sent.value // 0),
+        record_date: ($sent.record_date // null),
+        user_id: ($sent.user_id // null),
+        job_type_id: ($sent.job_type_id // null),
+        summary: ($sent.summary // null),
+        invoice_item_id: 0,
+        is_trashed: false,
+        # The coercion this plugin exists to catch: a not_billable project
+        # stores 0 whatever was sent, with no error and nothing in the response
+        # to announce it.
+        billable_status: (if $bt == "not_billable" then 0 else ($sent.billable_status // 0) end)
+      } + (if $sent.task_id then {parent_type:"Task", parent_id:$sent.task_id}
+           else {parent_type:"Project", parent_id:$pid} end))}'
+  exit 0
+fi
+
+case "$method" in
+  GET|GETALL) : ;;
+  *) echo "fake-ac: $method is not stubbed (only GET, GETALL and POST /time-records)" >&2; exit 64 ;;
+esac
+
+case "$bare" in
+  /trash)         serve trash.json ;;
+  /job-types)     serve job-types.json ;;
+  /companies)     serve companies.json ;;
+  /users)         serve users.json ;;
+  /projects)      serve projects.json ;;
+  /time-records)  serve time-records.json ;;
+  /invoices)
+    # The real instance 404s here for a normal API token. Reproducing that is the
+    # point: invoice-preflight must report it as unverifiable, not assume access.
+    echo "curl: (22) The requested URL returned error: 404" >&2
+    echo "fake-ac: /invoices is intentionally unavailable, as on the live instance" >&2
+    exit 22 ;;
+esac
+
+if [ "$p1" = "projects" ] && [ -n "${p2:-}" ]; then
+  case "${p3:-}" in
+    "")           serve "project-$p2.json" ;;
+    time-records) if [ -n "${p4:-}" ]; then serve "record-$p2-$p4.json"; else serve "time-records-$p2.json"; fi ;;
+    tasks)        case "${p4:-}" in
+                    "")      serve "tasks-open-$p2.json" ;;
+                    archive) serve "tasks-archive-$p2.json" ;;
+                    *)       serve "task-$p2-$p4.json" ;;
+                  esac ;;
+  esac
+fi
+
+echo "fake-ac: route not stubbed: $method $bare" >&2
+exit 64

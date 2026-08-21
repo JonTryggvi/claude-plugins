@@ -150,6 +150,22 @@ Symptom to recognise: any call that returns `total 0.00`, or a `jq` null where a
 The token reaches curl through a config file on a pipe rather than an argument, so it never appears in
 `ps` output.
 
+## Testing
+
+```bash
+bash tests/run-tests.sh
+```
+
+83 assertions against fixtures — no network, no ActiveCollab, no mailbox, no calendar, nothing written
+outside a temp directory. The shipped scripts run unmodified: they are pointed at
+[`tests/fake-ac`](tests/fake-ac) through the `AC_BIN` seam they already have.
+
+**Add a fixture and an assertion when you extend a skill.** Reach for the live API only to establish a fact
+fixtures cannot tell you — a response shape, whether a filter is honoured, whether a route exists — and
+keep that read-only. Every fixture here started as that kind of probe, and every trap listed below is
+reproduced in one. [tests/README.md](tests/README.md) covers the seams, the traps, and what is still not
+covered.
+
 ## API notes worth knowing before extending this
 
 **Pagination is silent and only affects some endpoints.** `/projects` caps at 100 per page — Avista has

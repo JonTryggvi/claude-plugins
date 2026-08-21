@@ -1,0 +1,17 @@
+{"version":1,"updated":"2026-08-21","entries":[
+ {"slug":"fraktlausnir","repos":["__REPO_A__","__REPO_A_CLONE__"],
+  "project_id":489,"project_name":"Fraktlausnir.is","default_task_id":null,
+  "default_job_type_id":1,"default_job_type":"Programming","budget_type":"pay_as_you_go",
+  "decisions":[{"date":"2026-08-12","action":"never_propose",
+                "reason":"already inside record 16112 of 2026-08-13, which itemises it",
+                "decided":"2026-08-21"}]},
+ {"slug":"digital-id","repos":["__REPO_B__"],
+  "project_id":456,"project_name":"Avista Auth","default_job_type_id":1,
+  "default_job_type":"Programming","budget_type":"pay_as_you_go","also_logged_under":[487]},
+ {"slug":"avistaconnect","repos":["__REPO_C__"],
+  "project_id":154,"project_name":"Avista Connect","default_task_id":11698,
+  "default_task_name":"Rafræn auðkenning fyrir WP Login",
+  "default_job_type_id":1,"default_job_type":"Programming","budget_type":"not_billable"},
+ {"slug":"chess","repos":["__REPO_PRIVATE__"],"private":true,
+  "note":"personal project, no client, never billed — do not ask again"}
+]}

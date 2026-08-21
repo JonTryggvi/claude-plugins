@@ -1,0 +1,10 @@
+{"resultCountEstimate":"3","threads":[
+ {"id":"T1","messages":[
+   {"id":"m1","date":"2026-08-14T12:22:04Z","labelIds":["IMPORTANT","INBOX"],"sender":"client@example.is","toRecipients":["jontryggvi@avista.is"]},
+   {"id":"m2","date":"2026-08-14T12:41:56Z","labelIds":["SENT"],"sender":"jontryggvi@avista.is","toRecipients":["client@example.is"]}]},
+ {"id":"T2_no_sent_in_sample","messages":[
+   {"id":"m3","date":"2026-08-12T09:46:12Z","labelIds":["IMPORTANT","INBOX"],"sender":"colleague@avista.is","toRecipients":["client@example.is"],"ccRecipients":["jontryggvi@avista.is"]},
+   {"id":"m4","date":"2026-08-12T10:19:14Z","labelIds":["IMPORTANT","INBOX"],"sender":"colleague@avista.is","toRecipients":["client@example.is"],"ccRecipients":["jontryggvi@avista.is"]}]},
+ {"id":"T3","messages":[
+   {"id":"m5","date":"2026-08-03T09:10:00Z","labelIds":["SENT"],"sender":"jontryggvi@avista.is","toRecipients":["client2@example.is"]}]}
+]}

@@ -1,0 +1,23 @@
+{
+ "time_records": [],
+ "related": {
+  "Project": {
+   "489": {
+    "id": 489,
+    "name": "Fraktlausnir.is"
+   },
+   "487": {
+    "id": 487,
+    "name": "Reykvc.is"
+   },
+   "154": {
+    "id": 154,
+    "name": "Avista Connect"
+   },
+   "479": {
+    "id": 479,
+    "name": "Avista Core - Plugin Development Overview"
+   }
+  }
+ }
+}

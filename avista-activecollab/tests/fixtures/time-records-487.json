@@ -1,0 +1,39 @@
+{
+ "time_records": [
+  {
+   "id": 16100,
+   "project_id": 487,
+   "record_date": 1786320000,
+   "value": 3.25,
+   "user_id": 6,
+   "user_name": "Jón Tryggvi Unnarsson",
+   "job_type_id": 1,
+   "billable_status": 1,
+   "invoice_item_id": 0,
+   "is_trashed": false,
+   "summary": "Farið yfir alla öriggis þætti, þeir skráðir og lagaðir eftir þörfum",
+   "parent_type": "Project",
+   "parent_id": 487
+  }
+ ],
+ "related": {
+  "Project": {
+   "489": {
+    "id": 489,
+    "name": "Fraktlausnir.is"
+   },
+   "487": {
+    "id": 487,
+    "name": "Reykvc.is"
+   },
+   "154": {
+    "id": 154,
+    "name": "Avista Connect"
+   },
+   "479": {
+    "id": 479,
+    "name": "Avista Core - Plugin Development Overview"
+   }
+  }
+ }
+}
