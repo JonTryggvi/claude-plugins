@@ -1,6 +1,6 @@
 ---
 name: activecollab-reconcile-period
-description: Reconcile a whole date window against ActiveCollab — measures every mapped repo over the period from both git commits and Claude Code session attention, reads back what is already logged, compares per project AND per date, and proposes one time record per sitting for the difference. Use when the user says "reconcile last month", "month-end reconciliation", "what did I not log in July", "close out the period", "catch up my timesheet for the month", "reconcile the period before invoicing", "I need to log a month of work", "find everything I worked on but never logged", or has a window of hours to settle rather than one feature. Deduplicates shared repos cloned into several sites by SHA, excludes cherry-picked older work, replaces single-commit floors with real session spans where one covers the date, reports what is still a floor separately, and refuses to propose a record on a date whose hours are already covered by an over-covering correction. Never posts without showing the user every record first. For a single feature use activecollab-suggest-time; for a read-only look at logged hours use activecollab-time-audit.
+description: Reconcile a whole date window against ActiveCollab — measures every mapped repo over the period from both git commits and Claude Code session attention, reads back what is already logged, compares per project AND per date, and proposes one time record per sitting for the difference. Use when the user says "reconcile last month", "month-end reconciliation", "what did I not log in July", "close out the period", "catch up my timesheet for the month", "reconcile the period before invoicing", "I need to log a month of work", "find everything I worked on but never logged", or has a window of hours to settle rather than one feature. Reads deliberately-trashed records so a deleted duplicate is never silently re-proposed, applies recorded per-date decisions from the project map so last month's judgement calls are not re-litigated, counts coverage from other projects declared in also_logged_under, deduplicates shared repos cloned into several sites by SHA, excludes cherry-picked older work, replaces single-commit floors with real session spans where one covers the date, reports what is still a floor separately, and refuses to propose a record on a date whose hours are already covered by an over-covering correction. Never posts without showing the user every record first. For a single feature use activecollab-suggest-time; for a read-only look at logged hours use activecollab-time-audit.
 ---
 
 # Reconcile a period
@@ -181,7 +181,106 @@ discussed in them — a reconciliation summary goes onto a shared timesheet, so 
 be read, quoted, or summarised into one. If you find yourself wanting a session's text to describe a
 record, take the description from the commit subjects or ask the user.
 
-## Step 5 — Reconcile per date, not per project total
+## Step 5 — Respect what a previous run already decided
+
+Three things make a re-run safe, and all three come from state that outlives the run. Without them a
+reconciliation is not idempotent: it re-proposes work somebody already dealt with, every month, forever.
+
+### Deleted records: a trashed duplicate comes straight back
+
+A date holding no **active** record reads as unlogged. A date whose duplicate was **deliberately trashed**
+also holds no active record. So it reads as unlogged and gets proposed again.
+
+This happened: 0.75h (16179) and 1.25h (16180) were posted to Fraktlausnir.is on 2026-08-12, recognised as
+already covered by the 3.50h record 16112 of 2026-08-13 which itemises the same work, and trashed. A fresh
+reconciliation proposes that same 2.00h straight back.
+
+Finding them is not obvious. The route you would reach for cannot work: `/time-records?from&to` **carries**
+an `is_trashed` key and returns **zero** trashed records, because the server already filtered them — so a
+client-side `select(.is_trashed != true)` on it is dead code. `GET /trash` has the ids (as an id → summary
+map, nothing else), and `/projects/<pid>/time-records/<id>` serves a trashed record in full but 404s on the
+wrong project. Full endpoint detail is in
+[references/trashed-and-state.md](references/trashed-and-state.md).
+
+So `trashed-records.sh` takes the ids from `/trash` and probes them against the mapped projects. Any id it
+cannot place is reported, because a deleted record you cannot see is exactly the one that comes back.
+
+```bash
+bash "<this-skill-dir>/scripts/trashed-records.sh" --map ~/.claude/activecollab-project-map.json \
+  --from 2026-08-01 --to 2026-08-31
+```
+
+`reconcile-period.sh` runs it and attaches the result per date. Every affected proposal carries
+`needs_confirmation_reason`, and the report says it plainly:
+
+```
+  ! deleted record on a candidate date: id 16179 project 489 2026-08-12 0.75h
+  ! deleted record on a candidate date: id 16180 project 489 2026-08-12 1.25h
+```
+
+**Neither skipping nor proposing is safe by default.** A trashed record is usually deliberate, so
+re-proposing pays twice — but one trashed by accident is real missing time. Say which records were deleted,
+on which date, for how much, and let the user decide. Then record the answer as a decision so the next run
+does not ask again.
+
+### Decisions: last month's judgement calls, applied
+
+```bash
+jq -r '.decisions_applied[] | "\(.slug) \(.date) \(.action) — \(.reason)"' recon.json
+```
+
+`activecollab-project-map` stores `never_propose` and `capped_at` decisions per date. This skill reads them,
+drops or flags matching proposals, and **reports every one it applied with its reason and the date it was
+decided** — a run should never be quietly shaped by a rule nobody can see.
+
+Demonstrated: before recording a decision, 2026-08-12 proposed 2.25h across two records. After
+`decide --action never_propose`, the same date reads `settled-by-decision` with zero proposals, and the
+window's proposed total drops from 4.92h to 2.67h.
+
+If an applied decision now looks wrong, change it in the map — do not override it inside the run, or next
+month decides it again from scratch. And when this run makes a fresh judgement call, record it before you
+finish; that is the whole mechanism.
+
+### Hours logged against a different project
+
+A date can be covered by a record on another project entirely — a whole-security-sweep record on Reykvc.is
+(487) covering Digital-Id dates, on the real run. An entry declares this with `also_logged_under`, and such
+dates come back as **`covered-elsewhere`** rather than `covered`:
+
+```bash
+jq -r '.projects[].dates[] | select(.status=="covered-elsewhere")
+       | "\(.date) measured \(.measured_hours)h own \(.logged_hours)h elsewhere \(.logged_elsewhere_hours)h"' recon.json
+```
+
+Report it as covered-from-elsewhere, not as covered. The distinction is the difference between "these hours
+are billed" and "these hours are billed **on another project**", and only the second one lets someone check
+that the arrangement was intended.
+
+### Has a run already covered this window?
+
+```bash
+jq -r '.prior_runs[] | "\(.at)  \(.window.from)..\(.window.to)  \(.records_posted) record(s)"' recon.json
+```
+
+`run-log.sh` keeps an append-only receipt of what previous runs posted. ActiveCollab is still the authority
+on how many hours are logged — this log is never a substitute for reading the API — but it answers the two
+questions the API cannot: *did a run already cover this window*, and *which records did this tool create*
+(the difference between resuming a half-finished posting run and double-posting it).
+
+After a posting run, record it:
+
+```bash
+bash "<this-skill-dir>/scripts/run-log.sh" append --from 2026-08-01 --to 2026-08-31 --user 6 \
+  --records 16301,16302,16303 --decisions 2 --note "month-end 2026-08"
+```
+
+Judgement calls do **not** go here. A decision is durable and reviewed and belongs in the map, versioned
+alongside the mapping. The run log is a receipt; the map is the memory.
+
+Schemas for all three mechanisms — the trashed-id probe, the decisions fields, the run-log entry — are in
+[references/trashed-and-state.md](references/trashed-and-state.md). Read it before extending any of them.
+
+## Step 6 — Reconcile per date, not per project total
 
 **This is the step that stops a duplicate.** Subtracting a project's logged total from its measured total
 tells you a number and hides where it came from.
@@ -206,6 +305,8 @@ Each date carries a status:
 | `partial` | logged less than measured | Candidate for the difference. |
 | `covered` | logged ≥ measured | Leave it. |
 | `logged-only` | logged hours, no commits | Normal. Meetings, support, admin, page building. |
+| `covered-elsewhere` | covered by a record on a project named in `also_logged_under` | Leave it, and say where the hours are. |
+| `settled-by-decision` | a recorded `never_propose` / `capped_at` decision applies | Leave it, and quote the decision's reason. |
 
 ### The duplicate-risk check
 
@@ -237,7 +338,7 @@ opposite things:
 Say which one you think it is, show the dates it rests on, and let the user decide. Never resolve it
 silently in either direction.
 
-## Step 6 — Report what is still a floor, as a floor
+## Step 7 — Report what is still a floor, as a floor
 
 ```bash
 jq '.totals | {measured_hours, measured_floor_only_hours, measured_excluding_floor_hours}' recon.json
@@ -268,7 +369,7 @@ Never quietly inflate a floor to something more plausible. A guessed number on a
 visibly conservative one, because nobody knows to question it. And never present the floor total as
 measured time — say *"at least 9.00h, which is an undercount"*.
 
-## Step 7 — Propose, one record per sitting, and show every one
+## Step 8 — Propose, one record per sitting, and show every one
 
 ```bash
 jq -r '.proposals[] | "\(.record_date)  \(.value)h  project \(.project_id)  task \(.task_id // "NONE")  \(if .duplicate_risk then "DUP-RISK" else "" end)  \(.suggested_summary // "")"' recon.json
@@ -327,11 +428,32 @@ Post these 6 records? (nothing has been written yet)
 **Nothing is written before that answer.** Time records feed invoicing, and this skill proposes numbers it
 derived rather than numbers the user stated — which is exactly why the human has to see each one.
 
-## Step 8 — Post, then verify by re-reading
+## Step 9 — Post, then verify by re-reading
 
-Hand each approved record to `activecollab-log-time`. Payload to a **file** — the shell runs under
-`LC_CTYPE="C"` and Icelandic summaries break as inline arguments — and set `LC_ALL=en_US.UTF-8` for the
-call:
+Hand each approved record to `activecollab-log-time`, which routes through `post-and-verify.sh` so the
+project's `budget_type` is checked **before** the write and every field is diffed sent-vs-stored after it:
+
+```bash
+bash "../activecollab-log-time/scripts/post-and-verify.sh" --project 388 --payload rec-01.json --post
+```
+
+That matters here specifically: a reconciliation posts in bulk, and a `not_billable` project silently
+storing `billable_status: 0` across nine records is exactly the kind of thing nobody notices until an
+invoice is short.
+
+Then **record the run**, so a re-run knows this window was already covered:
+
+```bash
+bash "<this-skill-dir>/scripts/run-log.sh" append --from 2026-08-01 --to 2026-08-31 --user 6 \
+  --records 16301,16302,16303 --note "month-end 2026-08"
+```
+
+And **record any judgement call you made** — a date you decided not to propose, a shortfall reviewed and
+left — with `project-map.sh decide`. A reconciliation that settles ten questions and writes none of them
+down has settled nothing; next month asks all ten again.
+
+By hand, the payload goes to a **file** — the shell runs under `LC_CTYPE="C"` and Icelandic summaries break
+as inline arguments — with `LC_ALL=en_US.UTF-8` on the call:
 
 ```bash
 LC_ALL=en_US.UTF-8 ~/.claude/bin/ac POST /projects/388/time-records "$(cat rec-01.json)" > /tmp/resp.json
@@ -364,6 +486,13 @@ reconciliation re-run from the top double-posts the first half.
 - Multiply a gap by an hourly rate. Measure, do not price — and unlogged hours are not automatically
   billable hours.
 - Include commits authored before the window without saying that is what it did.
+- Propose a date whose records were deliberately trashed without saying so. Re-posting a removed duplicate
+  is the one mistake that costs the client money twice.
+- Apply a decision without reporting it. A run shaped by an invisible rule cannot be checked.
+- Override a decision inside the run instead of changing it in the map — that guarantees it is re-decided
+  next month.
+- Treat `covered-elsewhere` as plain `covered`. Where the hours landed is the point.
+- Read the run log to answer how many hours are logged. ActiveCollab is the authority; the log is a receipt.
 - Blur session attention and commit spans into one undifferentiated "measured" figure. They are different
   kinds of evidence; every date and every proposal carries its `basis` for a reason.
 - Add per-project session hours together and present the sum as time worked. Use `wall_clock_hours`.
@@ -382,6 +511,11 @@ reconciliation re-run from the top double-posts the first half.
 | Records posted but the audit total did not move | Wrong `record_date`, or they landed on a project outside the window filter. Re-read before assuming. |
 | A billable record reads back non-billable | The project is `budget_type: not_billable`. An override, not an error — report it. |
 | `total 0.00` anywhere in the flow | `/usr/sbin/ac` answered. Nothing is logged looks identical to nothing was read. |
+| A record you deleted last month is proposed again | Trashed records are invisible to `/time-records`. Confirm the flagged date, then record a decision. |
+| A trashed id could not be placed | Its project is not in the map. Widen the map — an unseen deleted record is the one that returns. |
+| The same date is re-proposed every month | The judgement call was never recorded. `project-map.sh decide`. |
+| A date shows as missing but the hours exist on another project | Add that project to `also_logged_under`. |
+| Proposals look duplicative after a successful run | Check `.prior_runs` — a run already posted for this window. |
 | Session hours are 0 everywhere | The store is elsewhere — set `CLAUDE_SESSION_STORE`. Or the work genuinely happened outside Claude Code. |
 | Session hours look implausibly high | Check for blocks flagged `over_max_block` — a long background command reads as attention. |
 | Per-project session hours sum far above the month | Expected when projects were open in parallel. Use `wall_clock_hours`. |

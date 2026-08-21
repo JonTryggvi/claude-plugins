@@ -1,6 +1,6 @@
 ---
 name: activecollab-log-time
-description: Log tracked hours against an ActiveCollab task or project — resolves the project, task, job type and person from names to IDs, then posts the time record only after showing exactly what will be written, and reads the stored record back so an overridden billable_status is reported rather than assumed. Use when the user says "log time in ActiveCollab", "log 2 hours on that task", "track my time", "book hours to <project>", "add a time record", "I spent 3 hours on X", "put that on the timesheet", or wants to correct or delete a record they already logged. Time records feed reporting and invoicing, so this never posts without explicit approval and never invents a duration the user did not state. For reading hours back — per task, project, person or company over a date window — use activecollab-time-audit.
+description: Log tracked hours against an ActiveCollab task or project — resolves the project, task, job type and person from names to IDs, pre-flights the project's budget_type so a billable_status that will be silently coerced to 0 is reported BEFORE posting, then posts only after showing exactly what will be written and diffs the stored record against what was sent so any field the platform overrode is reported rather than assumed. Use when the user says "log time in ActiveCollab", "log 2 hours on that task", "track my time", "book hours to <project>", "add a time record", "I spent 3 hours on X", "put that on the timesheet", or wants to correct or delete a record they already logged. Time records feed reporting and invoicing, so this never posts without explicit approval and never invents a duration the user did not state. For reading hours back — per task, project, person or company over a date window — use activecollab-time-audit.
 ---
 
 # Log time to ActiveCollab
@@ -109,26 +109,73 @@ Only ever **write** `0` or `1`. `2` and `3` are states the invoicing side puts r
 this instance, where every `2` and `3` record carried a non-zero `invoice_item_id` and every `0` and `1`
 carried zero.
 
+### Pre-flight the project's billing settings, then verify what was stored
+
+Both halves matter, and the script does both:
+
+```bash
+# pre-flight only — writes nothing, and that is the default
+bash "<this-skill-dir>/scripts/post-and-verify.sh" --project 154 --payload rec.json
+
+# after the user approves: write, re-read, and diff sent against stored
+bash "<this-skill-dir>/scripts/post-and-verify.sh" --project 154 --payload rec.json --post
+```
+
+Writing needs `--post` explicitly. Pre-flight is the default because this touches a real timesheet, and an
+accidental invocation should not be able to create a record.
+
+The pre-flight reads `budget_type` from the project map's cache when there is one — the write path already
+has that answer and used not to use it — falls back to a live `GET /projects/<id>`, and says which source
+it used. If the cached value disagrees with the live one it prefers live and tells you the map needs
+`project-map.sh validate`, because a stale cache predicts the wrong outcome confidently.
+
+It also flags a payload with **no** `billable_status`: the API then defaults it to billable when `task_id`
+is set and non-billable otherwise, so the outcome depends on a field you did not state. Set it explicitly.
+
+After `--post` it re-reads the record and diffs `value`, `record_date`, `user_id`, `job_type_id`,
+`task_id`, `billable_status` and `summary`. Anything the platform changed is reported as `OVERRIDDEN`:
+
+```
+posted record 16311 to project 154 Avista Connect  budget_type=not_billable
+  value: sent 1.5 -> stored 1.5
+  billable_status: sent 1 -> stored 0   OVERRIDDEN
+  ! billable_status was sent as 1 and STORED as 0. The project is budget_type=not_billable, which
+    coerces it — this is an override, not an error. Report the stored value, never the sent one.
+```
+
+Report the **stored** values. Describing the payload you sent as though it were the outcome is how a
+non-billable record gets handed to whoever is invoicing as billable.
+
 ### Some projects overwrite the `billable_status` you send, silently
 
 Send `billable_status: 1` to a project ActiveCollab considers non-billable and it stores **`0`**. HTTP 200,
 no validation error, no warning field in the response — the record simply is not billable, and nobody finds
 out until an invoice comes up short.
 
-The field that predicts it is **`budget_type`** on the project, not `is_billable` (which does not exist on
-this instance — reading it returns `null`, so any check written against it silently passes):
+Confirmed on **9 records** posted to Avista Connect (154) during a real month-end run: every one reads back
+non-billable. The work was real and billable and it is now on a timesheet as neither.
+
+The field that predicts it is **`budget_type`**, and `is_billable` is emphatically **not** the mechanism —
+a guard written against `is_billable` passes and proves nothing:
+
+| Project | `is_billable` | `budget_type` | stores `billable_status: 1`? |
+|---|---|---|---|
+| 154 Avista Connect | `false` | `not_billable` | **no — always 0** |
+| 428 Avista Commerce | `false` | `pay_as_you_go` | yes |
+| 489 Fraktlausnir.is | `true` | `pay_as_you_go` | yes |
+
+428 carries the same `is_billable` as 154 and behaves like 489. Read `budget_type`:
 
 ```bash
-~/.claude/bin/ac GET /projects/154 | jq -r '"\(.single.name): budget_type=\(.single.budget_type)"'
+~/.claude/bin/ac GET /projects/154 | jq -r '"\(.single.name): budget_type=\(.single.budget_type) is_billable=\(.single.is_billable)"'
 ```
 
-On this instance `budget_type` takes exactly two values across all 213 projects, and it lines up with what
-gets stored:
+Across all 213 projects `budget_type` takes exactly two values, and it lines up with what gets stored:
 
-| `budget_type` | Projects | `billable_status` values found on their records |
+| `budget_type` | Projects | `billable_status` on their records |
 |---|---|---|
-| `not_billable` | 7 — incl. **154 Avista Connect**, 141 Avista Care, 374 Avista.is | only `0`, without exception |
-| `pay_as_you_go` | 206 — incl. **428 Avista Commerce** | `0` and `1` both, as written |
+| `not_billable` | 7 — incl. 154 Avista Connect, 141 Avista Care, 374 Avista.is | only `0`, without exception |
+| `pay_as_you_go` | 206 — incl. 428 Avista Commerce | `0` and `1` both, as written |
 
 So check `budget_type` **before** you promise the user a billable record. If it is `not_billable`, say so
 while you are still showing the preview — *"154 Avista Connect is a non-billable project, so this will
@@ -136,7 +183,7 @@ store as non-billable whatever we send"* — rather than reporting a billable re
 
 **Then read the value back regardless.** `budget_type` is a strong predictor, not a guarantee: it is one
 project-level flag, and per-project or per-member billing rules can produce the same coercion without it
-changing. The response to the POST already carries the stored value, so this costs nothing:
+changing. `post-and-verify.sh --post` does the read-back and the diff; by hand it is:
 
 ```bash
 ~/.claude/bin/ac POST /projects/154/time-records "$(cat payload.json)" > /tmp/resp.json
@@ -245,5 +292,6 @@ over delete-and-re-add.
 | Record is non-billable unexpectedly | `billable_status` omitted on a project-level record, where it defaults to `0`. |
 | A record refuses to look edited | It may be invoiced (`invoice_item_id != 0`) — check before assuming the write failed. |
 | Record posted `billable_status=1` but reads back `0` | The project is `budget_type: not_billable`. Not an error — an override. Report it. |
-| A `is_billable` check on a project always passes | That field does not exist here; it returns `null`. Read `budget_type`. |
+| An `is_billable` check passed but the record stored 0 | `is_billable` is not the mechanism — 428 is `false` and stores 1 fine. Read `budget_type`. |
+| A record reads back billable when the map said otherwise | The cached `budget_type` is stale. Run `project-map.sh validate`. |
 | A read "for one person" returns everyone | `user_id` was passed to `/time-records?from&to`, which ignores it. See `activecollab-time-audit`. |

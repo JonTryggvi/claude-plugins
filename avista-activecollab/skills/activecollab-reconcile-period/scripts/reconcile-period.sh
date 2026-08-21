@@ -182,6 +182,28 @@ if [ "$USE_SESSIONS" = "1" ] && [ -f "$HERE/session-time.sh" ]; then
   fi
 fi
 
+# --- deliberately deleted records -------------------------------------------
+#
+# A date whose duplicate was trashed on purpose holds no ACTIVE record, so it
+# reads as unlogged and gets proposed again — putting back exactly what somebody
+# removed. The date-windowed /time-records endpoint cannot help here: it carries
+# an is_trashed key but returns zero trashed records, so a client-side filter on
+# it is dead code. trashed-records.sh goes at it through GET /trash instead.
+echo '{"trashed":[],"by_project_date":[],"unresolved_ids":[],"totals":{}}' > "$TMP/trashed.json"
+if [ -f "$HERE/trashed-records.sh" ]; then
+  bash "$HERE/trashed-records.sh" --map "$MAP" --from "$FROM" --to "$TO" --quiet \
+    > "$TMP/trashed.json" 2>/dev/null \
+    || echo '{"trashed":[],"by_project_date":[],"unresolved_ids":[],"totals":{}}' > "$TMP/trashed.json"
+fi
+
+# --- has a run already covered this window? ---------------------------------
+echo '{"prior_runs":[],"totals":{"runs_overlapping":0,"records_posted":0}}' > "$TMP/runs.json"
+if [ -f "$HERE/run-log.sh" ]; then
+  bash "$HERE/run-log.sh" check --from "$FROM" --to "$TO" --user "$USER_ID" \
+    > "$TMP/runs.json" 2>/dev/null \
+    || echo '{"prior_runs":[],"totals":{"runs_overlapping":0,"records_posted":0}}' > "$TMP/runs.json"
+fi
+
 # --- reduce -----------------------------------------------------------------
 python3 - "$TMP" "$FROM" "$TO" "$USER_ID" > "$TMP/out.json" <<'PY'
 import json, sys, io, os
@@ -200,6 +222,12 @@ def load(name, default=None):
 
 def r2(x):
     return round(float(x) + 0.0, 2)
+
+trashed_doc = load('trashed.json', {}) or {}
+trashed_by_pd = {}
+for row in (trashed_doc.get('by_project_date') or []):
+    trashed_by_pd[(row.get('project_id'), row.get('record_date'))] = row
+runs_doc = load('runs.json', {}) or {}
 
 sessions_doc = load('sessions.json', {}) or {}
 session_by_pid = {}
@@ -254,6 +282,12 @@ for x in recs:
     dd['records'].append(row)
     e['records'].append(row)
 
+def logged_on(pid, date):
+    e = logged_by_project.get(pid)
+    if not e:
+        return 0.0
+    return float((e['dates'].get(date) or {}).get('hours') or 0.0)
+
 entries = []
 with io.open(os.path.join(tmp, 'measured.ndjson'), encoding='utf-8') as fh:
     for line in fh:
@@ -264,7 +298,8 @@ with io.open(os.path.join(tmp, 'measured.ndjson'), encoding='utf-8') as fh:
 projects = []
 tot_measured = tot_logged = tot_proposed = tot_floor = 0.0
 tot_commits = tot_session = 0.0
-tot_upgraded = 0
+tot_upgraded = tot_elsewhere = tot_settled = tot_trashed_dates = 0
+applied_decisions = []
 rows = uniq = dupes = backdated = 0
 mapped_pids = set()
 
@@ -299,10 +334,27 @@ for e in entries:
     sess = session_by_pid.get(pid, {})
     sess_blocks = session_blocks_by_pid.get(pid, {})
 
+    # Hours for this work can legitimately land on a DIFFERENT project — a
+    # whole-security-sweep record on one project covering a plugin's dates, for
+    # instance. A per-project/per-date comparison cannot see that, so those
+    # dates look unlogged. An entry declares the other projects with
+    # `also_logged_under`, and coverage from them is counted but reported
+    # separately, never folded in silently.
+    elsewhere_pids = [x for x in (e.get('also_logged_under') or []) if isinstance(x, int)]
+
+    # Judgement calls from a previous run, structured rather than prose.
+    decisions = {}
+    for dec in (e.get('decisions') or []):
+        if isinstance(dec, dict) and dec.get('date'):
+            decisions.setdefault(dec['date'], []).append(dec)
+
     dates = []
     proposed_here = 0.0
     upgraded_here = 0
-    for d in sorted(set(list(by_date.keys()) + list(lg['dates'].keys()) + list(sess.keys()))):
+    all_dates = set(list(by_date.keys()) + list(lg['dates'].keys()) + list(sess.keys()))
+    all_dates |= {k for k in decisions.keys()}
+    all_dates |= {dt for (ppid, dt) in trashed_by_pd if ppid == pid}
+    for d in sorted(all_dates):
         git_meas = r2(by_date.get(d, {}).get('measured', 0.0))
         sess_h = r2(sess.get(d, 0.0))
         floor_h = r2(by_date.get(d, {}).get('floor', 0.0))
@@ -318,24 +370,53 @@ for e in entries:
         else:
             meas, basis = git_meas, ('commits' if git_meas > 0 else 'none')
         logd = r2(lg['dates'].get(d, {}).get('hours', 0.0))
-        if meas > 0 and logd == 0:
+        elsewhere = []
+        elsewhere_hours = 0.0
+        for xp in elsewhere_pids:
+            h = logged_on(xp, d)
+            if h > 0:
+                elsewhere.append({'project_id': xp,
+                                  'project_name': (related_p.get(str(xp), {}) or {}).get('name'),
+                                  'hours': r2(h)})
+                elsewhere_hours += h
+        elsewhere_hours = r2(elsewhere_hours)
+        covered_total = r2(logd + elsewhere_hours)
+        tr = trashed_by_pd.get((pid, d))
+        decs = decisions.get(d, [])
+
+        if meas > 0 and covered_total == 0:
             status = 'missing'
-        elif meas == 0 and logd > 0:
+        elif meas == 0 and covered_total > 0:
             status = 'logged-only'          # non-commit work, or an over-covering correction
-        elif logd + 1e-9 >= meas:
-            status = 'covered'
+        elif covered_total + 1e-9 >= meas:
+            status = 'covered-elsewhere' if (logd + 1e-9 < meas and elsewhere_hours > 0) else 'covered'
         else:
             status = 'partial'
         row = {'date': d, 'measured_hours': meas, 'logged_hours': logd,
-               'delta_hours': r2(logd - meas), 'status': status,
+               'delta_hours': r2(covered_total - meas), 'status': status,
                'basis': basis,
                'commit_hours': git_meas, 'session_hours': sess_h,
                'floor_only_hours': floor_h,
+               'logged_elsewhere_hours': elsewhere_hours,
+               'logged_elsewhere': elsewhere,
+               'covered_total_hours': covered_total,
+               'trashed_hours': (tr or {}).get('hours', 0),
+               'trashed_record_ids': (tr or {}).get('ids', []),
+               'trashed_values': (tr or {}).get('values', []),
+               'decisions': decs,
                'sittings': by_date.get(d, {}).get('sittings', []),
                'session_blocks': sess_blocks.get(d, []),
                'logged_records': lg['dates'].get(d, {}).get('records', [])}
+        # A decision recorded on a previous run settles this date. never_propose
+        # drops it entirely; capped_at means it was reviewed and deliberately
+        # left short, so the shortfall is not a finding either.
+        blocking = [x for x in decs if x.get('action') in ('never_propose', 'capped_at')]
+        row['decision_applied'] = blocking[0] if blocking else None
+        if blocking:
+            row['status'] = 'settled-by-decision'
+            status = 'settled-by-decision'
         if status in ('missing', 'partial'):
-            proposed_here += max(0.0, meas - logd)
+            proposed_here += max(0.0, meas - covered_total)
         dates.append(row)
 
     meas_tot = r2(sum(x['measured_hours'] for x in dates))
@@ -358,6 +439,11 @@ for e in entries:
         'commit_measured_hours': commit_tot,
         'session_attention_hours': session_tot,
         'dates_upgraded_by_sessions': upgraded_here,
+        'also_logged_under': [x for x in (e.get('also_logged_under') or []) if isinstance(x, int)],
+        'dates_covered_elsewhere': len([x for x in dates if x['status'] == 'covered-elsewhere']),
+        'dates_settled_by_decision': len([x for x in dates if x.get('decision_applied')]),
+        'dates_with_trashed_records': len([x for x in dates if x['trashed_hours']]),
+        'decisions': (e.get('decisions') or []),
         'measured_floor_only_hours': floor_tot,
         'measured_excluding_floor_hours': r2(meas_tot - floor_tot),
         'logged_hours': log_tot,
@@ -385,6 +471,15 @@ for e in entries:
     tot_commits += commit_tot
     tot_session += session_tot
     tot_upgraded += upgraded_here
+    tot_elsewhere += sum(1 for x in dates if x['status'] == 'covered-elsewhere')
+    tot_settled += sum(1 for x in dates if x.get('decision_applied'))
+    tot_trashed_dates += sum(1 for x in dates if x['trashed_hours'])
+    for x in dates:
+        if x.get('decision_applied'):
+            applied_decisions.append({'slug': e.get('slug'), 'project_id': pid,
+                                      'date': x['date'], **x['decision_applied'],
+                                      'measured_hours': x['measured_hours'],
+                                      'covered_hours': x['covered_total_hours']})
     tot_logged += log_tot
     tot_proposed += prop
     tot_floor += floor_tot
@@ -419,7 +514,9 @@ for p in projects:
     for d in p['dates']:
         if d['status'] not in ('missing', 'partial'):
             continue
-        shortfall = round(max(0.0, d['measured_hours'] - d['logged_hours']), 2)
+        if d.get('decision_applied'):
+            continue
+        shortfall = round(max(0.0, d['measured_hours'] - d['covered_total_hours']), 2)
         if shortfall <= 0:
             continue
         units = _units(d)
@@ -457,6 +554,15 @@ for p in projects:
                 'repos': s.get('repos') or [],
                 'suggested_summary': '; '.join((s.get('subjects') or [])[:3]) or None,
                 'date_already_has_logged_hours': d['logged_hours'] > 0,
+                'date_covered_elsewhere_hours': d['logged_elsewhere_hours'],
+                'trashed_on_this_date_hours': d['trashed_hours'],
+                'trashed_record_ids': d['trashed_record_ids'],
+                'needs_confirmation_reason': (
+                    'this date had %sh trashed (records %s). A trashed record is usually a duplicate '
+                    'somebody removed on purpose, so re-posting it pays twice — but one trashed by '
+                    'accident is real missing time. Confirm before posting.'
+                    % (d['trashed_hours'], ', '.join(str(x) for x in d['trashed_record_ids']))
+                    if d['trashed_hours'] else None),
                 'project_already_fully_covered': p['already_fully_covered'],
                 'duplicate_risk': p['already_fully_covered'],
             })
@@ -471,6 +577,43 @@ if backdated > 0:
         "%d commit(s) landed in this window but were authored before %s — cherry-picked or late-landed "
         "older work, excluded so it stays on the period it was done in. Pass --allow-backdated to include them."
         % (backdated, FROM))
+if applied_decisions:
+    warnings.append(
+        "applied %d recorded decision(s) from the project map, so those dates were not proposed: %s. "
+        "These are last month's judgement calls, kept structured precisely so this run does not "
+        "re-litigate them from memory. If one now looks wrong, change it in the map rather than "
+        "overriding it here — otherwise next month re-decides it again."
+        % (len(applied_decisions),
+           '; '.join('%s %s %s (%s)' % (d.get('slug'), d.get('date'), d.get('action'), d.get('reason'))
+                     for d in applied_decisions[:4])))
+if tot_trashed_dates:
+    trh = sum(float(x.get('value') or 0) for x in (trashed_doc.get('trashed') or []))
+    warnings.append(
+        "%d candidate date(s) hold DELETED records totalling %.2fh (ids %s). A trashed record is usually a "
+        "duplicate somebody removed on purpose, and re-proposing its date puts it straight back — but a "
+        "record trashed by accident is real missing time, so neither skipping nor proposing is safe by "
+        "default. Every affected proposal carries needs_confirmation_reason; walk those with the user."
+        % (tot_trashed_dates, trh,
+           ', '.join(str(x.get('id')) for x in (trashed_doc.get('trashed') or [])[:6])))
+if trashed_doc.get('unresolved_ids'):
+    warnings.append(
+        "%d trashed record id(s) could not be placed against any mapped project, so their date and value "
+        "are unknown: %s. A deleted record you cannot see is exactly the one that comes back — widen the "
+        "map before treating any date as clean."
+        % (len(trashed_doc['unresolved_ids']), ', '.join(str(x) for x in trashed_doc['unresolved_ids'][:8])))
+if tot_elsewhere:
+    warnings.append(
+        "%d date(s) are covered by a record on a DIFFERENT project, declared via also_logged_under. Those "
+        "dates are not unlogged — the hours went somewhere else deliberately. They are reported as "
+        "covered-elsewhere rather than hidden, so the attribution stays visible."
+        % tot_elsewhere)
+prior = (runs_doc.get('totals') or {})
+if (prior.get('runs_overlapping') or 0) > 0:
+    warnings.append(
+        "%d prior reconciliation run(s) already covered part of this window, posting %s record(s) in total "
+        "(most recent %s). Those hours read as logged now, so anything still proposed is either genuinely "
+        "new or something a mapping/decision change has resurfaced. Say which before posting."
+        % (prior.get('runs_overlapping'), prior.get('records_posted'), prior.get('last_run_at')))
 if tot_upgraded:
     warnings.append("%d date(s) measured higher from Claude Code session attention than from commits "
                     "(%.2fh sessions vs %.2fh commits overall). Those dates use the session figure and are "
@@ -542,6 +685,9 @@ out = {
         'session_attention_hours': r2(tot_session),
         'session_wall_clock_hours': (sessions_doc.get('totals') or {}).get('wall_clock_hours'),
         'dates_upgraded_by_sessions': tot_upgraded,
+        'dates_covered_elsewhere': tot_elsewhere,
+        'dates_settled_by_decision': tot_settled,
+        'dates_with_trashed_records': tot_trashed_dates,
         'measured_floor_only_hours': r2(tot_floor),
         'measured_excluding_floor_hours': r2(tot_measured - tot_floor),
         'logged_hours': r2(tot_logged),
@@ -553,6 +699,10 @@ out = {
     },
     'projects': sorted(projects, key=lambda p: -p['measured_hours']),
     'proposals': sorted(proposals, key=lambda x: (x['record_date'], x['project_id'] or 0)),
+    'decisions_applied': applied_decisions,
+    'trashed_in_window': (trashed_doc.get('trashed') or []),
+    'trashed_unresolved_ids': (trashed_doc.get('unresolved_ids') or []),
+    'prior_runs': (runs_doc.get('prior_runs') or []),
     'unmapped_logged_projects': unmapped,
     'warnings': warnings,
 }
@@ -576,5 +726,8 @@ cat "$TMP/out.json"
   jq -r '.projects[] | "  \((.slug // "?")|.[0:22])\t\(.measured_hours)\t\(.logged_hours)\t\(.delta_hours)\t\(.proposed_hours)\t\(.signal_quality)"' < "$TMP/out.json" \
     | awk -F'\t' '{printf "  %-22s %9s %9s %8s %9s  %s\n", $1,$2,$3,$4,$5,$6}'
   jq -r '.unmapped_logged_projects[] | "  i logged but unmapped: \(.logged_hours)h in project \(.project_id) \(.project_name // "(name not readable)")"' < "$TMP/out.json"
+  jq -r '.decisions_applied[]? | "  = settled by decision: \(.slug) \(.date) \(.action) — \(.reason) [decided \(.decided)]"' < "$TMP/out.json"
+  jq -r '.trashed_in_window[]? | "  ! deleted record on a candidate date: id \(.id) project \(.project_id) \(.record_date) \(.value)h"' < "$TMP/out.json"
+  jq -r '.prior_runs[]? | "  i prior run \(.at) covered \(.window.from)..\(.window.to), posted \(.records_posted) record(s)"' < "$TMP/out.json"
   jq -r '.warnings[] | "  ! \(.)"' < "$TMP/out.json"
 } >&2

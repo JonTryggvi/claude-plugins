@@ -13,7 +13,7 @@ find online about ActiveCollab authentication describes the *cloud* flow, which 
 | `activecollab-log-time` | Log a time record against a task or project. |
 | `activecollab-suggest-time` | Measure hours from the git log and propose entries against candidate tasks, creating one when none exists. |
 | `activecollab-time-audit` | Read logged time back (task / project / person / company over a window) and compare it against git-measured hours. Read-only. |
-| `activecollab-project-map` | Persist the repo → project mapping: clone-group paths, project id, default task and job type, explicit `private` flag. Resolved once, not monthly. |
+| `activecollab-project-map` | Persist the repo → project mapping: clone-group paths, project id, default task/job type, `private` flag, structured per-date **decisions**, and `also_logged_under`. Resolved once, not monthly. |
 | `activecollab-reconcile-period` | Month-end: measure a whole window against what is logged, per project **and per date**, from git commits **and** Claude Code session attention, and propose the difference one record per sitting. |
 | `activecollab-evidence-sweep` | Find billable work with no git trace — support email, meetings, phone fixes — via the Gmail/calendar connectors, and ask for the hours. |
 | `activecollab-invoice-preflight` | Per client before billing: logged, billable-not-yet-invoiced, dates with commits but no time — and what it could not verify. Read-only. |
@@ -235,6 +235,16 @@ skill drives its aggregation off the time records themselves and reports the rem
 
 ### `budget_type` decides whether a billable record stays billable
 
+Confirmed on **9 records** posted to Avista Connect (154) in one run: every one reads back non-billable.
+And `is_billable` is not the mechanism — 428 carries the same `is_billable: false` and stores `1` fine:
+
+| Project | `is_billable` | `budget_type` | stores `billable_status: 1`? |
+|---|---|---|---|
+| 154 Avista Connect | `false` | `not_billable` | **no — always 0** |
+| 428 Avista Commerce | `false` | `pay_as_you_go` | yes |
+| 489 Fraktlausnir.is | `true` | `pay_as_you_go` | yes |
+
+
 Send `billable_status: 1` to a project ActiveCollab treats as non-billable and it stores **`0`**. HTTP 200,
 no validation error, nothing in the response to flag it — the record simply is not billable, and nobody
 finds out until an invoice comes up short.
@@ -339,6 +349,40 @@ There is deliberately **no start/stop timer**. A tracker you have to remember to
 discipline problem that creates a month-end reconciliation, and a half-used timer is worse than commits —
 commits are a consistent undercount everyone treats as a floor, while a partly-used timer is a random
 undercount that looks exact.
+
+### Trashed records are absent from every date-windowed read
+
+`GET /time-records?from&to` returns an `is_trashed` key on every record and **zero records where it is
+true** — the server filters them first. So a client-side `select(.is_trashed != true)` on that endpoint is
+dead code, and, more importantly, *"no record on this date"* from that endpoint does not mean the date was
+never logged. It may mean a duplicate was deliberately deleted from it.
+
+Reading deleted records takes two calls:
+
+| Call | Gives |
+|---|---|
+| `GET /trash` | Object keyed by type; `.TimeRecord` is a map of **id → summary**. Ids only. |
+| `GET /projects/<pid>/time-records/<id>` | The trashed record in full, `is_trashed: true` included. **404s on the wrong project.** |
+
+So ids come from `/trash` and fields come from a per-project probe. Verified on a real month-end: ids 16179
+(0.75h) and 16180 (1.25h), both project 489 on 2026-08-12, trashed on purpose because the 3.50h record
+16112 of 2026-08-13 already itemises that work. A reconciliation that cannot see them proposes the 2.00h
+straight back.
+
+### Reconciliation state that has to outlive the run
+
+Three things make a month-end re-runnable rather than a re-litigation, all of them stored outside
+ActiveCollab because ActiveCollab has nowhere to put them:
+
+| State | Where | What it prevents |
+|---|---|---|
+| `decisions` (`never_propose`, `capped_at`, each with a required `reason`) | project map, per entry | Re-proposing a date somebody already settled. Reported on every run that applies one. |
+| `also_logged_under` | project map, per entry | Treating a date as unlogged when its hours went to another project by arrangement. |
+| run log (`~/.claude/activecollab-runs.jsonl`) | append-only receipt | Double-posting a half-finished run; not knowing a window was already covered. |
+
+The first two are **memory** — durable, reviewed, versioned next to the mapping. The third is a **receipt**:
+ActiveCollab is the authority on how many hours are logged, and reading the run log to answer that question
+is how two sources of truth drift apart.
 
 ### `billable_status` has four values, not two
 

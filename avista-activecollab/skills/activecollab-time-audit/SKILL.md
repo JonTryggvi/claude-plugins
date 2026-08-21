@@ -108,6 +108,18 @@ unattributed rather than dropping them, and never guess which client they belong
 report by looping over `GETALL /projects` misses them entirely — that is why the read is driven off the
 time records, not the project list.
 
+### Trashed records are absent, not filtered
+
+`/time-records?from&to` returns an `is_trashed` key on every record and **zero records where it is true** —
+the server filters them before you see them. So `time-logged.sh`'s `select(.is_trashed != true)` removes
+nothing, and its "N trashed record(s) excluded" line can never fire. Harmless here, because an audit wants
+active records anyway.
+
+It stops being harmless the moment you infer *"no record on this date"* from this endpoint: a date whose
+duplicate was deliberately deleted looks identical to a date never logged. Reading trashed records needs
+`GET /trash` plus a per-project fetch — see `activecollab-reconcile-period`, which has to care because it
+proposes new records onto exactly those dates.
+
 ### `billable_status` has four values, not two
 
 | Value | Meaning | `invoice_item_id` |

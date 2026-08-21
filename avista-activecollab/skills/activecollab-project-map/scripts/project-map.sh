@@ -3,11 +3,14 @@
 # project-map.sh — persist and query the repo -> ActiveCollab project mapping.
 #
 #   project-map.sh scan ~/dev ~/flywheel      # discover clone groups, show what is unmapped
+#   project-map.sh scan --since 2026-07-21 ~/dev   # ...ranked by commits in the window
 #   project-map.sh list                       # what is mapped
 #   project-map.sh resolve <repo-path>        # which project does this repo belong to
 #   project-map.sh tasks <project-id>         # OPEN + ARCHIVED tasks, one list
 #   project-map.sh projects [pattern]         # every project (GETALL — all 213, not the first 100)
 #   project-map.sh put <json-file>            # add/replace one entry (validated)
+#   project-map.sh decide --slug S --date D --action never_propose --reason R
+#                                             # record a judgement call, structured
 #   project-map.sh validate                   # do the stored ids and paths still exist
 #
 # The map lives at ~/.claude/activecollab-project-map.json (override with
@@ -36,8 +39,31 @@
 #     "default_job_type": "Programming",
 #     "budget_type": "pay_as_you_go",       # from the API; not_billable coerces billable_status to 0
 #     "private": false,                     # true = deliberately has NO project
+#     "also_logged_under": [487],            # other projects whose records can cover this one's dates
+#     "decisions": [                         # judgement calls that must survive to next month
+#       {"date":"2026-08-12","action":"never_propose",
+#        "reason":"already inside record 16112 of 2026-08-13, which itemises it",
+#        "decided":"2026-08-21"}
+#     ],
 #     "note": "why, if it needs saying"
 #   }
+#
+# DECISIONS ARE WHAT MAKES A RECONCILIATION IDEMPOTENT
+#
+# A month-end run makes judgement calls: this date is already covered by a
+# record that over-covers its own date; this date is deliberately logged short
+# and was reviewed. Left in prose, those decisions only work if the next agent
+# reads the note carefully and agrees with itself. Left nowhere, every month
+# re-litigates last month from memory — and re-proposes work somebody already
+# decided against.
+#
+#   never_propose  this date is settled; drop or flag any proposal on it
+#   capped_at      this date is deliberately logged short of measured, reviewed
+#                  and left that way (record `hours` = what was logged)
+#
+# Every decision carries a `reason` and a `decided` date, because a decision
+# whose reasoning is lost is indistinguishable from a mistake and will be
+# reversed by the next person who looks at the numbers.
 #
 # A private entry needs `slug`, `repos`, `private: true` and a `note`. It must
 # NOT carry a project_id — the whole point is recording that there isn't one.
@@ -73,10 +99,19 @@ case "$CMD" in
 # an origin are the same code in several places — a clone group — and must be
 # measured as one unit, deduplicated by SHA, or the same work counts many times.
 scan)
+  SINCE=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --since) SINCE="${2:?--since needs YYYY-MM-DD}"; shift 2 ;;
+      --since=*) SINCE="${1#*=}"; shift ;;
+      *) break ;;
+    esac
+  done
   [ $# -gt 0 ] || { echo "project-map.sh scan: give one or more directories to search" >&2; exit 64; }
   ensure_map
   TMP=$(mktemp -d) || exit 70; trap 'rm -rf "$TMP"' EXIT
   : > "$TMP/repos.tsv"
+  : > "$TMP/act.tsv"
   for root in "$@"; do
     [ -d "$root" ] || { echo "project-map.sh: no such directory: $root" >&2; continue; }
     find "$root" -maxdepth 8 -type d -name .git 2>/dev/null | sed 's|/\.git$||' | while read -r r; do
@@ -87,7 +122,24 @@ scan)
   done
   sort -u "$TMP/repos.tsv" -o "$TMP/repos.tsv"
 
-  jq -R -s --slurpfile map "$MAP" '
+  # An unmapped group is silently absent from every reconciliation, so this list
+  # is where real misses hide — and a flat wall of 42 paths trains people to skim
+  # it. With --since, each group is reported with its commit count and last
+  # commit date in that window, active ones first, so "3 of 42 have commits since
+  # 2026-07-21" replaces "42 alphabetical paths". SHAs are unioned across a
+  # group's clones, because the same commit readable from three checkouts is one
+  # commit, not three.
+  if [ -n "$SINCE" ]; then
+    while IFS=$'\t' read -r origin repo; do
+      [ -n "${repo:-}" ] || continue
+      git -C "$repo" log --no-merges "--since=$SINCE" --pretty=format:"%H%x09%ct" 2>/dev/null \
+        | awk -F'\t' -v o="$origin" 'NF>=2 { print o "\t" $1 "\t" $2 }' >> "$TMP/act.tsv"
+    done < "$TMP/repos.tsv"
+  fi
+
+  jq -R -s --slurpfile map "$MAP" \
+     --arg since "$SINCE" \
+     --rawfile act "$TMP/act.tsv" '
     [ split("\n")[] | select(length>0) | split("\t") | {origin:.[0], repo:.[1]} ]
     | group_by(.origin)
     | map({
@@ -97,6 +149,13 @@ scan)
       })
     | . as $groups
     | ($map[0].entries // []) as $entries
+    | ( $act | split("\n") | map(select(. != "") | split("\t"))
+        | group_by(.[0])
+        | map({ key: .[0][0],
+                value: ( (map(.[1]) | unique | length) as $n
+                         | { commits: $n,
+                             last_commit: ((map(.[2] | tonumber) | max) // null) } ) })
+        | from_entries ) as $activity
     | {
         groups: [ $groups[] | . as $g
           | ([$entries[] | select((.repos // []) | any(. as $r | $g.clones | index($r)))] | first) as $hit
@@ -106,8 +165,13 @@ scan)
               project_id: ($hit.project_id // null),
               private: ($hit.private // false),
               paths_not_in_map: (if $hit == null then $g.clones
-                                 else [$g.clones[] | select(($hit.repos // []) | index(.) | not)] end)
+                                 else [$g.clones[] | select(($hit.repos // []) | index(.) | not)] end),
+              commits_since: (if $since == "" then null else (($activity[$g.origin].commits) // 0) end),
+              last_commit: (if $since == "" then null
+                            else (($activity[$g.origin].last_commit) | if . then (. | todate[:10]) else null end) end),
+              active: (if $since == "" then null else ((($activity[$g.origin].commits) // 0) > 0) end)
             } ],
+        window: (if $since == "" then null else {since: $since} end),
         summary: {
           groups_found: ($groups | length),
           clone_groups: ([$groups[] | select(.clone_count > 1)] | length),
@@ -117,15 +181,27 @@ scan)
     | .summary += {
         mapped: ([.groups[] | select(.mapped and (.private|not))] | length),
         private: ([.groups[] | select(.private)] | length),
-        unmapped: ([.groups[] | select(.mapped|not)] | length)
-      }' < "$TMP/repos.tsv" > "$TMP/out.json"
+        unmapped: ([.groups[] | select(.mapped|not)] | length),
+        unmapped_active: (if $since == "" then null
+                          else ([.groups[] | select((.mapped|not) and .active)] | length) end),
+        unmapped_quiet: (if $since == "" then null
+                         else ([.groups[] | select((.mapped|not) and (.active|not))] | length) end)
+      }
+    | .groups = (.groups | sort_by([(if .active == true then 0 else 1 end), (-(.commits_since // 0)), .origin]))' < "$TMP/repos.tsv" > "$TMP/out.json"
 
   cat "$TMP/out.json"
   {
     jq -r '"scan: \(.summary.repos_total) repo(s) in \(.summary.groups_found) group(s) — \(.summary.clone_groups) of them cloned more than once"' < "$TMP/out.json"
     jq -r '"  mapped \(.summary.mapped)   private \(.summary.private)   UNMAPPED \(.summary.unmapped)"' < "$TMP/out.json"
+    jq -r 'if .window then "  window: commits since \(.window.since) — \(.summary.unmapped_active) of \(.summary.unmapped) unmapped group(s) have commits in it" else empty end' < "$TMP/out.json"
     echo "  --- unmapped (each needs a project id, or an explicit private:true) ---"
-    jq -r '.groups[] | select(.mapped|not) | "  \(.clones|length)x  \(.clones[0])" + (if (.clones|length)>1 then "\n" + ([.clones[1:][] | "        + " + .] | join("\n")) else "" end)' < "$TMP/out.json"
+    jq -r '.groups[] | select((.mapped|not) and (.active == true))
+           | "  ACTIVE  \(.commits_since) commit(s), last \(.last_commit)   \(.clones|length)x  \(.clones[0])"
+             + (if (.clones|length)>1 then "\n" + ([.clones[1:][] | "              + " + .] | join("\n")) else "" end)' < "$TMP/out.json"
+    jq -r 'if .window and (.summary.unmapped_quiet > 0) then "  --- \(.summary.unmapped_quiet) unmapped group(s) with NO commits since \(.window.since) (listed, not ranked — nothing to reconcile there yet) ---" else empty end' < "$TMP/out.json"
+    jq -r '.groups[] | select((.mapped|not) and (.active != true))
+           | "  quiet   \(.clones|length)x  \(.clones[0])"
+             + (if (.clones|length)>1 then "\n" + ([.clones[1:][] | "              + " + .] | join("\n")) else "" end)' < "$TMP/out.json"
     jq -r '.groups[] | select(.mapped and ((.paths_not_in_map|length) > 0)) | "  ! \(.slug): clone group has path(s) missing from the map — \(.paths_not_in_map|join(", "))"' < "$TMP/out.json"
   } >&2
   ;;
@@ -136,7 +212,8 @@ list)
   cat "$MAP"
   {
     jq -r '"map: \(.entries|length) entr(y/ies), updated \(.updated // "never")"' < "$MAP"
-    jq -r '.entries[] | select(.private|not) | "  \(.slug)\tproject \(.project_id) \(.project_name // "")\ttask \(.default_task_id // "-")\tjob \(.default_job_type // "-")\t\(.budget_type // "?")\t\(.repos|length) path(s)"' < "$MAP"
+    jq -r '.entries[] | select(.private|not) | "  \(.slug)\tproject \(.project_id) \(.project_name // "")\ttask \(.default_task_id // "-")\tjob \(.default_job_type // "-")\t\(.budget_type // "?")\t\(.repos|length) path(s)\t\((.decisions // [])|length) decision(s)\t\(if ((.also_logged_under // [])|length) > 0 then "also: " + ((.also_logged_under|map(tostring))|join(",")) else "" end)"' < "$MAP"
+    jq -r '.entries[] | .slug as $s | (.decisions // [])[] | "    decision \($s) \(.date) \(.action)\(if .hours then " @\(.hours)h" else "" end) — \(.reason) [decided \(.decided)]"' < "$MAP"
     jq -r '.entries[] | select(.private) | "  \(.slug)\tPRIVATE — no ActiveCollab project (\(.note // "no reason recorded"))"' < "$MAP"
   } >&2
   ;;
@@ -230,7 +307,23 @@ put)
           (if (.note // "") == "" then "a private entry needs a note saying why, so nobody re-litigates it next month" else empty end))
        else
          (if (.project_id | type) != "number" then "project_id is required (or set private:true)" else empty end)
-       end) ] | join("; ")' < "$f")
+       end),
+      (if (.also_logged_under // []) | type != "array" then "also_logged_under must be an array of project ids"
+       elif ((.also_logged_under // []) | map(select(type != "number")) | length) > 0 then "also_logged_under must hold numbers, not strings"
+       else empty end),
+      (if (.decisions // []) | type != "array" then "decisions must be an array" else empty end),
+      ((.decisions // [])[] |
+        (if (.date // "") | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}$") | not
+           then "each decision needs a date as YYYY-MM-DD" else empty end),
+        (if ((.action // "") | IN("never_propose","capped_at")) | not
+           then "decision action must be never_propose or capped_at (got \"\(.action // "")\")" else empty end),
+        (if (.reason // "") == ""
+           then "decision for \(.date // "?") needs a reason — a decision whose reasoning is lost gets reversed next month" else empty end),
+        (if (.decided // "") | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}$") | not
+           then "decision for \(.date // "?") needs a `decided` date, so a stale call can be spotted" else empty end),
+        (if (.action == "capped_at") and ((.hours // null) | type != "number")
+           then "a capped_at decision for \(.date // "?") needs `hours` — the figure that was deliberately logged" else empty end)
+      ) ] | join("; ")' < "$f")
   [ -z "$err" ] || { echo "project-map.sh: $err" >&2; exit 65; }
 
   TMP=$(mktemp) || exit 70
@@ -240,6 +333,70 @@ put)
     | .updated = $d' < "$MAP" > "$TMP" && cat "$TMP" > "$MAP" && rm -f "$TMP"
   chmod 600 "$MAP"
   jq -r --arg s "$(jq -r .slug < "$f")" '"stored: \($s) — map now holds \(.entries|length) entr(y/ies)"' < "$MAP" >&2
+  ;;
+
+# ---------------------------------------------------------------- decide -----
+# Record a judgement call so next month does not re-litigate it. This is the
+# ergonomic front door to the `decisions` array — hand-editing JSON to add one
+# is how decisions end up unrecorded.
+decide)
+  ensure_map
+  D_SLUG=""; D_DATE=""; D_ACTION=""; D_REASON=""; D_HOURS=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --slug)   D_SLUG="${2:-}"; shift 2 ;;
+      --date)   D_DATE="${2:-}"; shift 2 ;;
+      --action) D_ACTION="${2:-}"; shift 2 ;;
+      --reason) D_REASON="${2:-}"; shift 2 ;;
+      --hours)  D_HOURS="${2:-}"; shift 2 ;;
+      *) echo "project-map.sh decide: unknown argument '$1'" >&2; exit 64 ;;
+    esac
+  done
+  [ -n "$D_SLUG" ] && [ -n "$D_DATE" ] && [ -n "$D_ACTION" ] && [ -n "$D_REASON" ] || {
+    cat >&2 <<'EOT'
+usage: project-map.sh decide --slug SLUG --date YYYY-MM-DD
+                             --action never_propose|capped_at
+                             --reason "why, in a sentence"
+                             [--hours N]     (required for capped_at)
+
+  never_propose  this date is settled — do not propose it again
+  capped_at      this date is deliberately logged short of measured, reviewed
+                 and left; --hours is what was actually logged
+
+The reason is not optional. A decision whose reasoning is lost is
+indistinguishable from a mistake, and the next person to look at the numbers
+will reverse it.
+EOT
+    exit 64; }
+  case "$D_ACTION" in
+    never_propose) : ;;
+    capped_at) [ -n "$D_HOURS" ] || { echo "project-map.sh decide: capped_at needs --hours (what was deliberately logged)" >&2; exit 64; } ;;
+    *) echo "project-map.sh decide: --action must be never_propose or capped_at" >&2; exit 64 ;;
+  esac
+  case "$D_DATE" in
+    [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) : ;;
+    *) echo "project-map.sh decide: --date must be YYYY-MM-DD" >&2; exit 64 ;;
+  esac
+  jq -e --arg s "$D_SLUG" '[.entries[]? | select(.slug == $s)] | length > 0' < "$MAP" >/dev/null 2>&1 || {
+    echo "project-map.sh decide: no entry with slug '$D_SLUG' — add it with \`put\` first" >&2
+    jq -r '"  known slugs: " + ([.entries[]?.slug] | join(", "))' < "$MAP" >&2
+    exit 66; }
+
+  TMP=$(mktemp) || exit 70
+  jq --arg s "$D_SLUG" --arg dt "$D_DATE" --arg a "$D_ACTION" --arg r "$D_REASON" \
+     --arg h "$D_HOURS" --arg today "$(today)" '
+    ({date:$dt, action:$a, reason:$r, decided:$today}
+      + (if $h == "" then {} else {hours: ($h|tonumber)} end)) as $new
+    | .entries = [ .entries[] |
+        if .slug == $s then
+          .decisions = ([ (.decisions // [])[]
+                          | select((.date != $dt) or (.action != $a)) ] + [$new]
+                        | sort_by(.date, .action))
+        else . end ]
+    | .updated = $today' < "$MAP" > "$TMP" && cat "$TMP" > "$MAP" && rm -f "$TMP"
+  chmod 600 "$MAP"
+  jq -r --arg s "$D_SLUG" --arg dt "$D_DATE" '.entries[] | select(.slug==$s) | (.decisions // [])[] | select(.date==$dt) |
+    "recorded: \($s) \(.date) \(.action)\(if .hours then " @\(.hours)h" else "" end) — \(.reason) [decided \(.decided)]"' < "$MAP" >&2
   ;;
 
 # ------------------------------------------------------------- validate -----

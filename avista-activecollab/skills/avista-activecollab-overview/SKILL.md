@@ -21,7 +21,7 @@ Present this overview, then point the user at the right skill.
 | `activecollab-log-time` | Logs a time record against a task or project — resolves job type and person, posts on approval. | Recording hours actually worked. |
 | `activecollab-suggest-time` | Measures working time from the git log (commits grouped into sittings, SHA-deduplicated across clone groups, every identity a person commits under), finds candidate tasks — creating one when none exists — and proposes one entry per sitting. Refuses to guess when commits are a poor signal. | After finishing a feature, when you need to know what to log and against what. |
 | `activecollab-time-audit` | Reads logged time back — per task, project, person, or company over a date window — and compares it against git-measured hours to spot systematic under-logging. Read-only. | "How much is logged on this?" / "Are we under-logging?" |
-| `activecollab-project-map` | Persists the repo → project mapping: clone-group paths, project id, default task and job type, and an explicit `private` flag for repos that deliberately have no project. | **Once per repo**, then whenever `validate` reports drift. |
+| `activecollab-project-map` | Persists the repo → project mapping: clone-group paths, project id, default task and job type, a `private` flag, **structured per-date decisions**, and the other projects a group's hours can land on. | **Once per repo**, then whenever `validate` reports drift — and after every judgement call. |
 | `activecollab-reconcile-period` | The month-end job: measures a whole window against what is logged, per project **and per date**, from **two** sources — git commits and Claude Code session attention — and proposes the difference one record per sitting. | Closing out a month or a period. |
 | `activecollab-evidence-sweep` | Finds billable work with no git trace — support email, meetings, phone fixes — via the Gmail and calendar connectors, and asks for the hours. | The measured total is obviously too low. |
 | `activecollab-invoice-preflight` | Per client, before billing: what is logged, what is billable and not yet invoiced, which dates have commits but no time — and what it could not verify. | Billing day. |
@@ -106,10 +106,27 @@ Four more traps, all verified against the live instance, that decide whether a p
 
 | Trap | What actually happens |
 |---|---|
+| Trashed records | `/time-records` carries an `is_trashed` key and returns **none** of them. A client-side filter on it is dead code, and a deliberately-deleted date is indistinguishable from an unlogged one. Ids come from `GET /trash`; fields from `/projects/<pid>/time-records/<id>`. |
 | `GET /projects` | Caps at **100**; this instance has **213**. Use `GETALL` or half the projects are invisible and a real one looks missing. |
 | Finished tasks | `/projects/<id>/tasks` returns them as **bare ids** in `.completed_task_ids`. Names and numbers only come from `/projects/<id>/tasks/archive` — an **array**, where the open list is an object. Project 154 shows 2 open tasks and holds 27 archived. |
-| `billable_status` on write | Projects with `budget_type: not_billable` (7 of 213) store **`0`** whatever you send, silently. `is_billable` does not exist here — it reads `null`, so a check against it always passes. Read the record back. |
+| `billable_status` on write | Projects with `budget_type: not_billable` (7 of 213) store **`0`** whatever you send, silently — confirmed on 9 records. `is_billable` is **not** the mechanism: 428 is `is_billable=false` and stores `1` fine, because its `budget_type` is `pay_as_you_go`. Pre-flight `budget_type`, then diff the stored record against what was sent. |
 | `GET /invoices` | **404** for a normal API token. There is no way to read invoices; `invoice_item_id != 0` on a time record is the only invoice signal available. |
+
+**A reconciliation has to be idempotent, and three kinds of state make it so.** Re-running a month should
+surface what is genuinely new, not re-litigate last month. Three failure modes, all seen on a real run:
+
+- **A deliberately deleted duplicate comes back.** `/time-records` returns no trashed records at all, so a
+  date whose duplicate was trashed on purpose reads as unlogged. `reconcile-period` reads `GET /trash` and
+  flags those dates instead of silently re-proposing them.
+- **Judgement calls evaporate.** *This date is already covered; this one is deliberately logged short.*
+  Those live in the project map as structured `decisions` with a required reason, and every run reports the
+  ones it applied. In prose in a `note`, they only work if the next agent reads carefully.
+- **Hours land on another project.** `also_logged_under` declares that, and such dates read
+  `covered-elsewhere` rather than `covered`, so where the hours went stays visible.
+
+A fourth is a receipt rather than memory: `run-log.sh` records what a posting run created, which is how a
+half-finished run gets resumed instead of repeated. ActiveCollab remains the authority on hours — the log
+never answers "how much is logged".
 
 **There are three measurement sources, not one, and they are ranked.** Commits are a weak proxy for time:
 measured over a real three-week window in one repo, commit sittings gave **1.75h** (`signal: poor`), Claude

@@ -1,6 +1,6 @@
 ---
 name: activecollab-project-map
-description: Persist the repo-to-ActiveCollab-project mapping so it is resolved once instead of rediscovered every month — records each clone group's paths, its project id, default task and job type, and an explicit private flag for repos that deliberately have no project. Use when the user says "which ActiveCollab project does this repo belong to", "map this repo to a project", "remember that this repo has no project", "save the project mapping", "which of my repos aren't mapped yet", "find the task for this work", "is that project still there", or before running activecollab-reconcile-period or activecollab-invoice-preflight, both of which need the mapping to exist. Resolves projects with GETALL (a plain GET hides half the list) and includes archived tasks when proposing a match, because completed tasks still accept time records and the honest match for finished work is usually archived. Writes only a local map file — never to ActiveCollab.
+description: Persist the repo-to-ActiveCollab-project mapping so it is resolved once instead of rediscovered every month — records each clone group's paths, its project id, default task and job type, an explicit private flag for repos that deliberately have no project, structured decisions that keep last month's judgement calls from being re-litigated, and the other projects a group's hours can legitimately land on. Use when the user says "which ActiveCollab project does this repo belong to", "map this repo to a project", "remember that this repo has no project", "save the project mapping", "which of my repos aren't mapped yet", "which unmapped repos actually have commits", "record that this date is already covered", "don't propose that date again", "remember this decision for next month", "find the task for this work", "is that project still there", or before running activecollab-reconcile-period or activecollab-invoice-preflight, both of which need the mapping to exist. Resolves projects with GETALL (a plain GET hides half the list) and includes archived tasks when proposing a match, because completed tasks still accept time records and the honest match for finished work is usually archived. Writes only a local map file — never to ActiveCollab.
 ---
 
 # Map repos to ActiveCollab projects, once
@@ -37,6 +37,12 @@ call the API directly, use the full path.
   "default_job_type": "Programming",
   "budget_type": "pay_as_you_go",
   "private": false,
+  "also_logged_under": [487],
+  "decisions": [
+    {"date": "2026-08-12", "action": "never_propose",
+     "reason": "already inside record 16112 of 2026-08-13, which itemises it",
+     "decided": "2026-08-21"}
+  ],
   "note": ""
 }
 ```
@@ -45,14 +51,94 @@ call the API directly, use the full path.
 projects coerce `billable_status` to `0` on write, and knowing that before proposing a billable record
 saves an invoice surprise (`activecollab-log-time` has the detail).
 
+## Decisions: the part that makes a reconciliation idempotent
+
+A month-end run makes judgement calls. *This date looks empty but is already covered by a record that
+over-covers its own date. This date is logged short of measured on purpose, and it was reviewed.* Those
+calls are the expensive part of the work — and if they live in a `note` as prose, they only survive if the
+next agent reads the note carefully and happens to agree with itself. If they live nowhere, every month
+re-litigates last month from memory and re-proposes work somebody already decided against.
+
+So record them structurally:
+
+```bash
+bash "<this-skill-dir>/scripts/project-map.sh" decide \
+  --slug fraktlausnir --date 2026-08-12 --action never_propose \
+  --reason "already inside record 16112 of 2026-08-13, which itemises it"
+
+bash "<this-skill-dir>/scripts/project-map.sh" decide \
+  --slug fraktlausnir --date 2026-08-19 --action capped_at --hours 2.40 \
+  --reason "logged 2.40h against 3.00h measured, reviewed and left"
+```
+
+| `action` | Means | Effect in `reconcile-period` |
+|---|---|---|
+| `never_propose` | This date is settled. | The date is dropped from proposals and reported as `settled-by-decision`. |
+| `capped_at` | Deliberately logged short of measured, reviewed. `--hours` is what was logged. | Same — the shortfall is not a finding. |
+
+`decide` replaces any existing decision for the same date **and** action, so re-running it updates rather
+than duplicating. Use it rather than hand-editing the JSON: editing by hand is how decisions end up
+unrecorded, which is the whole problem.
+
+**The `reason` is required and the tool refuses without one.** A decision whose reasoning is lost is
+indistinguishable from a mistake, and the next person to look at the numbers will reverse it — putting back
+exactly what was removed. `decided` is stamped automatically so a stale call can be spotted later.
+
+`reconcile-period` reports every decision it applied, with its reason and date, so a run is never quietly
+shaped by a rule nobody can see. If an applied decision now looks wrong, change it in the map rather than
+overriding it in the run — otherwise next month decides it again.
+
+## `also_logged_under`: hours that land on another project
+
+Work measured under one clone group is sometimes logged against a **different** project. On a real
+month-end, Digital-Id work was covered by a 3.25h whole-security-sweep record on Reykvc.is (487). A
+per-project, per-date comparison cannot see that, so those dates read as unlogged and get proposed again.
+
+```json
+"also_logged_under": [487]
+```
+
+`reconcile-period` then counts records on those projects when deciding whether a date is covered, and marks
+such dates `covered-elsewhere` rather than `covered` — so the fact that the hours went somewhere else stays
+visible instead of being smoothed away. Verified: the 2026-08-10 Digital-Id date measures 0.75h, has 0h of
+its own, and reads `covered-elsewhere` from 3.25h on 487.
+
+Use it for a genuine, deliberate arrangement. It is not a way to make an awkward date go quiet — if you are
+unsure whether hours really cover the work, that is a question for the user, not a map entry.
+
 ## Step 1 — Find out what is not mapped yet
 
 ```bash
 bash "<this-skill-dir>/scripts/project-map.sh" scan ~/dev ~/flywheel ~/Dropbox/dev
+bash "<this-skill-dir>/scripts/project-map.sh" scan --since 2026-07-21 ~/dev ~/flywheel
 ```
 
 `scan` walks the given roots for git repos, groups them by **remote origin URL**, and reports each group as
-mapped, private, or unmapped. Grouping by origin is the point: repos sharing an origin are the same code in
+mapped, private, or unmapped.
+
+### Use `--since`, because a flat list of unmapped groups gets skimmed
+
+An unmapped group is silently absent from every reconciliation, so this list is exactly where real misses
+hide. A real run returned **59 groups, 42 unmapped**, as an alphabetical wall — and none of the 42 had
+commits in the window, but nothing said so, which had to be worked out by hand. Forty-two paths with no
+signal trains people to skim the one list they cannot afford to skim.
+
+`--since` reports each unmapped group with its commit count and last commit date in that window, active
+ones first:
+
+```
+  window: commits since 2026-08-10 — 7 of 21 unmapped group(s) have commits in it
+  ACTIVE  49 commit(s), last 2026-08-21   1x  …/claude-smalls/idnu-shell
+  ACTIVE  27 commit(s), last 2026-08-20   1x  …/Avista Plugins/Avista-Core
+  --- 14 unmapped group(s) with NO commits since 2026-08-10 ---
+  quiet   1x  …/claude-smalls/HF
+```
+
+"7 of 21 have commits since 2026-08-10" is a thing someone can act on. SHAs are unioned across a group's
+clones first, because the same commit readable from three checkouts is one commit.
+
+Quiet groups are still listed — a group with no commits in the window may hold non-commit work, and it will
+matter next month. They are just not ranked as though they were urgent. Grouping by origin is the point: repos sharing an origin are the same code in
 several places, and the map has to hold them as one entry.
 
 ### Why clone groups, and not one repo per project
@@ -193,4 +279,8 @@ harder to spot than an error.
 | Time filed against an unrelated task | A `task_number` was stored where the global `id` was wanted. |
 | Measured hours far above anything worked | A clone group was recorded as separate entries, so its commits count once per copy. |
 | The same repos come up as unmapped every month | They are personal — record them `private` with a note. |
+| 42 unmapped groups with nothing to distinguish them | Pass `--since`; only the active ones need a decision now. |
+| A date settled last month is proposed again | The decision was prose in a `note`, or was never recorded. Use `decide`. |
+| `decide` refuses without a reason | Deliberate. An unexplained decision gets reversed by the next person. |
+| A date is covered by another project and still proposed | Add that project to `also_logged_under`. |
 | `validate` reports a project as unreadable | Some projects 404 for this token; their hours are real but unattributable. Do not guess a replacement. |
