@@ -39,7 +39,7 @@
 #   prompt-to-body.sh prompt.md "Prompt:" > /tmp/body.html
 #   jq -n --arg n "$NAME" --rawfile b /tmp/body.html \
 #     '{name:$n, body:$b, assignee_id:6}' > /tmp/payload.json
-#   ac POST /projects/479/tasks "$(cat /tmp/payload.json)"
+#   ~/.claude/bin/ac POST /projects/479/tasks "$(cat /tmp/payload.json)"
 #
 set -uo pipefail
 

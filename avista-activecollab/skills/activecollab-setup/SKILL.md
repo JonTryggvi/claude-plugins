@@ -88,7 +88,9 @@ It verifies the host really is ActiveCollab, exchanges the password for a token,
 and proves the whole chain with a real API call. It prints the user's `user_id` on success — note it, the
 other skills need it.
 
-Add `AC_STORE_OP=1` in front of the command for the 1Password-backed variant.
+Add `AC_STORE_OP=1` in front of the command for the 1Password-backed variant, and
+`AC_INSTALL_ALIAS=1` to have it add the `ac` alias to the user's shell rc — but only once they have
+agreed to that, see step 6.
 
 **Re-running invalidates the old token.** ActiveCollab keys the API subscription on
 `client_name` + `client_vendor`, so a second run updates the one subscription rather than accumulating
@@ -98,18 +100,64 @@ once, give the second a distinct `AC_CLIENT_NAME`.
 ## Step 5 — Confirm
 
 ```bash
-ac GET    /users    | jq -r '"users: \(length)"'
-ac GETALL /projects | jq -r '"projects: \(length)"'
+~/.claude/bin/ac GET    /users    | jq -r '"users: \(length)"'
+~/.claude/bin/ac GETALL /projects | jq -r '"projects: \(length)"'
 ```
 
-`~/.claude/bin` may not be on the user's `PATH`. If `ac` is not found, call it as `~/.claude/bin/ac`, or
-add the directory to their `~/.zshrc`.
+Always the full path. `~/.claude/bin` is **not** on `PATH`, and the short name is already taken.
+
+## Step 6 — Settle what a bare `ac` does on this machine
+
+This is worth its own step because getting it wrong does not produce an error.
+
+macOS ships **`/usr/sbin/ac`**, a login-accounting tool that has nothing to do with ActiveCollab. Since
+`~/.claude/bin` is not on `PATH`, a bare call reaches Apple's binary instead of ours — and it does not
+complain:
+
+```bash
+ac GET /users        # -> "total 0.00", exit status 0
+```
+
+No error, no warning, exit 0. A skill that reads that as "the API returned nothing" will go on to report
+zero users, zero projects, or zero logged hours, and every number downstream inherits it. This is the
+worst failure shape there is: a wrong answer wearing the costume of a successful call.
+
+The bootstrap already prints what `ac` resolves to on this machine. Confirm it yourself and show the user:
+
+```bash
+command -v ac || echo "(not on PATH)"
+```
+
+- Prints `/usr/sbin/ac` — the shadowing case, and the default on any Mac.
+- Prints nothing — bare `ac` simply fails, which is annoying but honest.
+- Prints `~/.claude/bin/ac` — already sorted.
+
+**Then offer the alias, and let the user decide.** `~/.zshrc` is their file, and a setup skill should not
+quietly rewrite persistent shell config. Show them the line and ask:
+
+```bash
+alias ac="$HOME/.claude/bin/ac"
+```
+
+If they say yes, re-run the bootstrap with `AC_INSTALL_ALIAS=1` and it appends that line to the rc for
+their shell, idempotently — running it twice does not add a second copy. Then verify in a **new** shell,
+because the current one has already read the rc:
+
+```bash
+zsh -lc 'command -v ac && ac GET /users | jq -r "\"users: \(length)\""'
+```
+
+If they say no, that is a perfectly good answer — the skills all call the full path anyway. What matters is
+that the user knows which binary answers to `ac`, so a stray `total 0.00` gets recognised instead of
+believed.
 
 ## Troubleshooting
 
 | Symptom | Cause |
 |---|---|
 | `ac: not configured` | `~/.claude/.env` lacks `ACTIVECOLLAB_URL` plus a token or op ref — re-run step 4. |
+| `total 0.00` and exit 0 from any call | That was `/usr/sbin/ac`, Apple's login accounting tool, not our client. Use `~/.claude/bin/ac`. See step 6. |
+| A call "succeeds" but returns nothing, and `jq` reports null | Same cause as above. Check `command -v ac` before debugging the API. |
 | HTTP 401 on every call | Token revoked, or another machine re-ran the bootstrap under the same client name. Re-run step 4. |
 | `type: 3 / Password is not valid` | The 1Password item holds a stale password. User updates 1Password, then re-run. |
 | `type: 2 / User does not exist or not active` | Wrong email in the login item, or the account is suspended. |
@@ -127,7 +175,7 @@ add the directory to their `~/.zshrc`.
 API subscriptions never expire on their own. Once set up, show the user what is live on their account:
 
 ```bash
-ac GET "/users/<their-user-id>/api-subscriptions" \
+~/.claude/bin/ac GET "/users/<their-user-id>/api-subscriptions" \
   | jq -r '.[] | "\(.id)\t\(.client_name) / \(.client_vendor)\tcreated=\(.created_on|todate)\trequests=\(.requests_count)"'
 ```
 
@@ -138,5 +186,5 @@ Note you can only read **your own** subscriptions — `/users/<someone-else>/api
 even for an Owner. A token belonging to another user can only be revoked from that user's account.
 
 Anything unrecognised is a live full-access credential worth revoking
-(`ac DELETE /users/<uid>/api-subscriptions/<id>`) — but **ask first**. A stale-looking entry may be a
+(`~/.claude/bin/ac DELETE /users/<uid>/api-subscriptions/<id>`) — but **ask first**. A stale-looking entry may be a
 mobile app they still use.

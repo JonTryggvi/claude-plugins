@@ -12,6 +12,27 @@ Requires `activecollab-setup`. If `ac` reports *not configured*, stop and point 
 **This writes into a project your colleagues — and on client projects, clients — can see.** Resolve
 everything to IDs first, show the user the exact payload, and only then POST. Never guess an assignee.
 
+
+## Call the client by its full path
+
+Every `ac` call in this skill is written `~/.claude/bin/ac`, and that is not
+pedantry. macOS ships its own `/usr/sbin/ac` — a login-accounting tool — and
+`~/.claude/bin` is **not** on `PATH`. So a bare `ac GET /users` runs Apple's
+binary, prints `total 0.00`, and **exits 0**. Nothing fails, nothing warns; you
+get a wrong answer shaped like an empty result, and every conclusion built on
+top of it inherits the error.
+
+Resolve it once at the top of any script:
+
+```bash
+AC="${AC_BIN:-$HOME/.claude/bin/ac}"
+[ -x "$AC" ] || { echo "no ac client — run the activecollab-setup skill" >&2; exit 69; }
+"$AC" GETALL /projects
+```
+
+If a call returns something suspiciously empty or a bare `total 0.00`, check
+which binary ran before you believe the number.
+
 ## Two rules that will bite you
 
 **1. Always write the JSON payload to a file. Never inline it.** The shell here runs under `LC_CTYPE="C"`,
@@ -20,14 +41,14 @@ names are full of them (`þ ý ð æ ö á í`). Worse, a mangled call can still
 partial task before the error surfaces. Use the Write tool to create the payload, then:
 
 ```bash
-ac POST /projects/479/tasks "$(cat /path/to/payload.json)"
+~/.claude/bin/ac POST /projects/479/tasks "$(cat /path/to/payload.json)"
 ```
 
 From a file, UTF-8 round-trips perfectly (`þýðingar` → `þýðingar` → `þýðingar`).
 
 **2. `estimate` requires `job_type_id`.** Sending an estimate without one fails with
 `"Job type is required for tasks with estimates"`. Get the job type in the same breath as the estimate —
-`ac GET /job-types` lists them, and note that **more than one can be flagged `is_default`** (both `Design`
+`~/.claude/bin/ac GET /job-types` lists them, and note that **more than one can be flagged `is_default`** (both `Design`
 and `Programming` are), so never auto-pick.
 
 ## Step 0 — Decide which kind of task this is
@@ -68,7 +89,7 @@ tasks, one in each mode. Do not compromise by putting a half-prompt in one.
 ## Step 1 — Resolve the project
 
 ```bash
-ac GETALL /projects | jq -r '.[] | "\(.id)\t\(.name)"' | sort -k2
+~/.claude/bin/ac GETALL /projects | jq -r '.[] | "\(.id)\t\(.name)"' | sort -k2
 ```
 
 Use `GETALL`, not `GET`. ActiveCollab caps `/projects` at 100 per page and Avista has 213, so a plain
@@ -80,7 +101,7 @@ client. If the user gave a numeric ID, trust it but echo the project name back s
 ## Step 2 — Resolve the assignee
 
 ```bash
-ac GET /users | jq -r '.[] | select(.is_archived != true) | "\(.id)\t\(.display_name)\t\(.email)\t[\(.class)]"'
+~/.claude/bin/ac GET /users | jq -r '.[] | select(.is_archived != true) | "\(.id)\t\(.display_name)\t\(.email)\t[\(.class)]"'
 ```
 
 - **`class` matters.** `Client` users are external. Assigning to a Client is occasionally correct and
@@ -93,8 +114,8 @@ The assignee must be a project member. The membership endpoint is `/members` (th
 it returns an **array of bare user IDs** — not objects:
 
 ```bash
-ids=$(ac GET /projects/479/members)          # e.g. [2,3,6,21]
-ac GET /users | jq -r --argjson m "$ids" '.[] | select(.id as $i | $m | index($i)) | "\(.id)\t\(.display_name)"'
+ids=$(~/.claude/bin/ac GET /projects/479/members)          # e.g. [2,3,6,21]
+~/.claude/bin/ac GET /users | jq -r --argjson m "$ids" '.[] | select(.id as $i | $m | index($i)) | "\(.id)\t\(.display_name)"'
 ```
 
 ## Step 3 — Pick a task list (optional but usually wanted)
@@ -102,7 +123,7 @@ ac GET /users | jq -r --argjson m "$ids" '.[] | select(.id as $i | $m | index($i
 The project's tasks endpoint already carries its task lists, so one call covers both:
 
 ```bash
-ac GET /projects/<project-id>/tasks | jq -r '.task_lists[] | "\(.id)\t\(.name)"'
+~/.claude/bin/ac GET /projects/<project-id>/tasks | jq -r '.task_lists[] | "\(.id)\t\(.name)"'
 ```
 
 This endpoint returns an **object** (`.tasks`, `.task_lists`, `.project`, …), not an array — `GETALL` will
@@ -211,7 +232,7 @@ Skip lifecycle labels too (`NEW` and friends) — they describe a queue this tas
 | `due_on` | date | `YYYY-MM-DD`. Also sets `start_on` to the same date if you omit it. |
 | `start_on` | date | `YYYY-MM-DD`. |
 | `is_important` | boolean | |
-| `labels` | array | Label **names**, e.g. `["NEW"]`. `ac GET /labels` lists them (they have `id` and `name` only — no `type` field on this instance). |
+| `labels` | array | Label **names**, e.g. `["NEW"]`. `~/.claude/bin/ac GET /labels` lists them (they have `id` and `name` only — no `type` field on this instance). |
 
 Show the resolved values in plain language before posting — names, not just IDs — and **lead with the
 mode**, so a wrong call in step 0 costs one word to fix instead of a stray ticket on someone's board:
@@ -240,7 +261,7 @@ Wait for explicit approval, then write the payload file and post. **The response
 `single`** — the task is at `.single`, not the top level:
 
 ```bash
-ac POST /projects/479/tasks "$(cat payload.json)" \
+~/.claude/bin/ac POST /projects/479/tasks "$(cat payload.json)" \
   | jq -r '"created #\(.single.task_number) (id \(.single.id)): \(.single.name)"'
 ```
 
@@ -250,7 +271,7 @@ A finished piece of work should not sit on the board as open. Completion has its
 project-scoped**, and it takes the task's global `id`, not its `task_number`:
 
 ```bash
-ac PUT /complete/task/<task-id> '{}' | jq -r '(.single // .) | "completed=\(.is_completed)"'
+~/.claude/bin/ac PUT /complete/task/<task-id> '{}' | jq -r '(.single // .) | "completed=\(.is_completed)"'
 ```
 
 `/open/task/<task-id>` reverses it. Both routes are verified to exist on this instance.
@@ -279,7 +300,7 @@ already in hand — the task exists only so those hours have a parent, so leavin
 Same field names, `PUT`, same `single` wrapper:
 
 ```bash
-ac PUT /projects/479/tasks/13375 "$(cat payload.json)" | jq -r '.single.estimate'
+~/.claude/bin/ac PUT /projects/479/tasks/13375 "$(cat payload.json)" | jq -r '.single.estimate'
 ```
 
 Reassigning notifies the new assignee — confirm before doing it.
@@ -291,7 +312,7 @@ and what happened is useful. Complete the task and log the time instead.
 ## Deleting
 
 ```bash
-ac DELETE /projects/479/tasks/<id> | jq -r '.single.is_trashed'
+~/.claude/bin/ac DELETE /projects/479/tasks/<id> | jq -r '.single.is_trashed'
 ```
 
 This is a **soft delete** — the task moves to the project trash (it appears in `.trashed_task_ids`) and

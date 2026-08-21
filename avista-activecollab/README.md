@@ -13,7 +13,17 @@ find online about ActiveCollab authentication describes the *cloud* flow, which 
 | `activecollab-log-time` | Log a time record against a task or project. |
 | `activecollab-suggest-time` | Measure hours from the git log and propose entries against candidate tasks, creating one when none exists. |
 | `activecollab-time-audit` | Read logged time back (task / project / person / company over a window) and compare it against git-measured hours. Read-only. |
+| `activecollab-project-map` | Persist the repo → project mapping: clone-group paths, project id, default task and job type, explicit `private` flag. Resolved once, not monthly. |
+| `activecollab-reconcile-period` | Month-end: measure a whole window against what is logged, per project **and per date**, and propose the difference one record per sitting. |
+| `activecollab-evidence-sweep` | Find billable work with no git trace — support email, meetings, phone fixes — via the Gmail/calendar connectors, and ask for the hours. |
+| `activecollab-invoice-preflight` | Per client before billing: logged, billable-not-yet-invoiced, dates with commits but no time — and what it could not verify. Read-only. |
 | `avista-activecollab-overview` | What's in the box and which skill to run. |
+
+The first six are the per-piece-of-work loop. The next four are the per-period loop, and they answer a
+different question: *"what did the whole of last month actually contain?"* rather than *"I just finished
+this feature"*. A period contains clone duplication, cherry-picked commits, dates already covered by an
+over-covering record, and whole categories of work that never touched git — reaching for
+`suggest-time` repeatedly to cover a month gets all four wrong.
 
 ## A task is either a brief or a record
 
@@ -69,8 +79,19 @@ individual time entries. Wall-clock elapsed is never presented as working time.
 `scripts/git-sittings.sh` does the measurement and emits JSON — usable on its own:
 
 ```bash
-AUTHOR=you@avista.is bash git-sittings.sh main..HEAD
+bash git-sittings.sh main..HEAD --author you@avista.is
+
+# every identity a person commits under, and every clone of the same code, as one measurement
+bash git-sittings.sh --since=2026-07-01 --until=2026-08-01 \
+  --author you@avista.is --author 'Your Name' --author yourhandle \
+  --repo ~/dev/myplugin --repo ~/flywheel/site/…/plugins/myplugin \
+  --author-date-floor 2026-07-01
 ```
+
+`--author` and `--repo` are both repeatable, commits are deduplicated by full SHA across every repo given,
+and the output reports `commit_rows` against `unique_commits` so the duplication it removed is visible
+rather than assumed. See *Measuring git is where period totals actually go wrong* below for why each of
+those flags exists.
 
 It reports a `signal_quality` field, and the skill **stops** when that is `poor` or `none`. Squash-merged
 release commits and end-of-session commit clusters both produce a handful of commits minutes apart after
@@ -99,15 +120,32 @@ previous token**. Two machines need two distinct `AC_CLIENT_NAME` values.
 
 ## The `ac` client
 
-Installed to `~/.claude/bin/ac` by setup.
+Installed to `~/.claude/bin/ac` by setup. **Call it by that full path.**
 
 ```bash
-ac GET    /users
-ac GETALL /projects
-ac POST   /projects/428/tasks '{"name":"Fix it","assignee_id":6}'
-ac PUT    /projects/428/time-records/312 '{"value":3}'
-ac DELETE /users/6/api-subscriptions/511
+~/.claude/bin/ac GET    /users
+~/.claude/bin/ac GETALL /projects
+~/.claude/bin/ac POST   /projects/428/tasks '{"name":"Fix it","assignee_id":6}'
+~/.claude/bin/ac PUT    /projects/428/time-records/312 '{"value":3}'
+~/.claude/bin/ac DELETE /users/6/api-subscriptions/511
 ```
+
+### A bare `ac` is a different program
+
+macOS ships **`/usr/sbin/ac`**, a login-accounting tool, and `~/.claude/bin` is **not** on `PATH`. So:
+
+```bash
+ac GET /users        # -> "total 0.00", exit status 0
+```
+
+Exit 0, no error, no warning. The output is a wrong answer shaped like a successful empty result, and
+anything downstream inherits it — a reconciliation reads it as "nothing is logged this month" and proposes
+double-posting the period. Every skill in this plugin writes the full path for this reason, and the scripts
+resolve `AC_BIN`/`$HOME/.claude/bin/ac` themselves.
+
+`activecollab-setup` step 6 reports what `ac` resolves to on the machine and offers to install
+`alias ac="$HOME/.claude/bin/ac"` — only on explicit agreement, since a shell rc is the user's file.
+Symptom to recognise: any call that returns `total 0.00`, or a `jq` null where a collection was expected.
 
 The token reaches curl through a config file on a pipe rather than an argument, so it never appears in
 `ps` output.
@@ -195,6 +233,77 @@ projects the token's user has no read access to. Their hours are real; their nam
 per-project report built by looping over `GETALL /projects` misses them entirely, which is why the audit
 skill drives its aggregation off the time records themselves and reports the remainder as unattributed.
 
+### `budget_type` decides whether a billable record stays billable
+
+Send `billable_status: 1` to a project ActiveCollab treats as non-billable and it stores **`0`**. HTTP 200,
+no validation error, nothing in the response to flag it — the record simply is not billable, and nobody
+finds out until an invoice comes up short.
+
+The predictor is **`budget_type`** on the project. Note that **`is_billable` does not exist** on this
+instance: reading it returns `null`, so any guard written against it silently passes. Verified across all
+213 projects:
+
+| `budget_type` | Count | `billable_status` found on their records |
+|---|---|---|
+| `not_billable` | 7 — incl. 154 Avista Connect, 141 Avista Care, 374 Avista.is, 458 Avista Ads, 100 Avista Core - Blueprint | only `0`, without exception |
+| `pay_as_you_go` | 206 — incl. 428 Avista Commerce | `0` and `1` both, as written |
+
+So check `budget_type` before promising a billable record, **and read the stored record back regardless** —
+one project-level flag is a strong predictor, not a guarantee. The only authority on what was written is
+what came back from the POST.
+
+### Finished tasks are invisible in the open list
+
+`/projects/<id>/tasks` returns open tasks in `.tasks` and finished ones as **bare ids** in
+`.completed_task_ids` — no names, no numbers, nothing to match against. The names come from
+`/projects/<id>/tasks/archive`, which returns an **array** of full task objects (the open list is an
+object — `GETALL` refuses it and a bare `.[]` fails). Verified:
+
+| Project | `.tasks` | `.completed_task_ids` | `/tasks/archive` |
+|---|---|---|---|
+| 428 Avista Commerce | 0 | 14 bare ids | 14 full objects |
+| 154 Avista Connect | 2 | 27 bare ids | 27 full objects |
+
+Project 154 therefore looks like a two-task project and holds 29. Since **completed tasks still accept time
+records**, the honest match for after-the-fact hours is usually archived — id 12088 *"ACF Fields from
+Parent theme Sync"* (task_number #12, project 428) is a real example, invisible unless you read the
+archive. Note that reconciliation notes usually quote the global `id`, not the small `task_number`.
+
+### `/invoices` is not readable
+
+`GET /invoices` returns **404** for a normal API token. There is no way to list invoices, read one's
+contents, or confirm an invoice exists for a period. The only invoice signal available anywhere is
+`invoice_item_id` on a time record — non-zero means that record is already on some invoice. Any statement
+about invoicing has to be phrased against that field and no more, which is why
+`activecollab-invoice-preflight` reports it as an explicit "could not verify" rather than implying a
+completeness it cannot have.
+
+### `/companies` is not paginated; `/projects` is
+
+Clients are companies, and every project carries `company_id` — that is how one client's projects are
+gathered. `/companies` returns all 211 from a plain `GET` (`GETALL` gives the same), unlike `/projects`.
+Do not generalise the pagination rule in either direction; check per endpoint.
+
+### Measuring git is where period totals actually go wrong
+
+Not an API note, but it costs more than any of the above. Four failure modes, all verified on real runs:
+
+- **Clone duplication.** Shared plugins are cloned into every site that uses them, so one commit is
+  readable from several paths. A real month-end run read **470 commit rows for 323 unique commits**, and
+  the undeduplicated figure was ~**92h** against an honest **59h**. Dedupe by full SHA.
+- **A stale clone treated as canonical.** The standalone checkout is frequently *behind* the site clones
+  (58 commits vs 63). Measure a clone group as the **union**, never as a nominated repo.
+- **Committer vs author date.** `--since`/`--until` filter **committer** date, which is right for "when was
+  this done" — a rebase is work. But a cherry-pick carries an author date from weeks earlier and belongs
+  to that period's invoice. `git-sittings.sh --author-date-floor` handles it.
+- **One identity per person.** Work email, personal email, bare username, GitHub noreply — four is
+  ordinary. A single `--author` substring measures a fraction of someone's work and attributes the rest to
+  nobody. `--author` is repeatable and the identities OR together.
+
+And a rule that is about honesty rather than mechanics: a sitting holding **one commit** has no span to
+measure, so it gets the lead-in allowance alone. That is a **floor**, not a measurement — reported
+separately (`single_commit_hours`), never folded into a total, never rounded up to look plausible.
+
 ### `billable_status` has four values, not two
 
 | Value | Meaning | `invoice_item_id` |
@@ -220,8 +329,8 @@ There is no project-level equivalent at all. `/projects/:id` carries `budget`, `
 ### Task completion has its own global route
 
 ```bash
-ac PUT /complete/task/<task-id> '{}'
-ac PUT /open/task/<task-id> '{}'
+~/.claude/bin/ac PUT /complete/task/<task-id> '{}'
+~/.claude/bin/ac PUT /open/task/<task-id> '{}'
 ```
 
 Not project-scoped, and it takes the **global `id`**, not `task_number`. `is_completed`, `completed_on` and

@@ -11,6 +11,27 @@ log says was actually worked, to spot systematic under-logging.
 Requires `activecollab-setup`. Writing time is a different skill — `activecollab-log-time`. **This skill
 writes nothing.** If the audit turns up a gap, the fix is a human deciding what to log, then that skill.
 
+
+## Call the client by its full path
+
+Every `ac` call in this skill is written `~/.claude/bin/ac`, and that is not
+pedantry. macOS ships its own `/usr/sbin/ac` — a login-accounting tool — and
+`~/.claude/bin` is **not** on `PATH`. So a bare `ac GET /users` runs Apple's
+binary, prints `total 0.00`, and **exits 0**. Nothing fails, nothing warns; you
+get a wrong answer shaped like an empty result, and every conclusion built on
+top of it inherits the error.
+
+Resolve it once at the top of any script:
+
+```bash
+AC="${AC_BIN:-$HOME/.claude/bin/ac}"
+[ -x "$AC" ] || { echo "no ac client — run the activecollab-setup skill" >&2; exit 69; }
+"$AC" GETALL /projects
+```
+
+If a call returns something suspiciously empty or a bare `total 0.00`, check
+which binary ran before you believe the number.
+
 ## The one thing to get right before reading any numbers
 
 ActiveCollab's time endpoints disagree with each other, and two of them **accept filters they silently
@@ -54,7 +75,7 @@ non-billable and already-invoiced hours.
 For a **single task**, the direct read is simpler and needs no window:
 
 ```bash
-ac GET /projects/479/tasks/13388/time-records \
+~/.claude/bin/ac GET /projects/479/tasks/13388/time-records \
   | jq -r '.time_records[] | "\(.record_date|todate[:10])\t\(.value)h\t\(.user_name)\t\(.summary[0:60])"'
 ```
 
@@ -65,7 +86,7 @@ holding the full `Project` and `Task` objects the records point at. That is how 
 A task also carries its own rolled-up `tracked_time` — but **only on a direct task fetch**:
 
 ```bash
-ac GET /projects/479/tasks/13388 | jq -r '"\(.tracked_time)h tracked, estimate \(.estimate)h"'
+~/.claude/bin/ac GET /projects/479/tasks/13388 | jq -r '"\(.tracked_time)h tracked, estimate \(.estimate)h"'
 ```
 
 `tracked_time` is **absent** from the `/projects/<id>/tasks` list and from `.related.Task`. Do not reach
@@ -115,40 +136,75 @@ If most of the work in question is not commit-producing, say so and stop. There 
 
 ## Step 3 — Compare logged against measured
 
-Write a pairs file — one repo and the project its hours land on, tab-separated:
+Write a pairs file — the repo (or **clone group**) and the project its hours land on, tab-separated. The
+first field may be a comma-separated list of paths holding the same commits:
 
 ```
-# repo                                          project-id
-/Users/me/dev/regluvordur                       412
-/Users/me/dev/idnu                              388
+# repo(s)                                                        project-id
+/Users/me/dev/regluvordur                                        412
+/Users/me/dev/idnu,/Users/me/flywheel/idnu/…/wp-content/…/myaccount   388
 ```
 
 ```bash
 bash "<this-skill-dir>/scripts/logging-gap.sh" \
-  --from 2026-06-01 --to 2026-08-21 --pairs pairs.tsv
-
-AUTHOR=jontryggvi@avista.is bash "<this-skill-dir>/scripts/logging-gap.sh" \
-  --from 2026-06-01 --to 2026-08-21 --pairs pairs.tsv
+  --from 2026-06-01 --to 2026-08-21 --pairs pairs.tsv \
+  --user 6 --author jontryggvi@avista.is --author 'Jón Tryggvi' --author jontryggvi
 ```
 
-It does one ActiveCollab read for the window, runs `git-sittings.sh` in each repo over the same window,
-and prints a row per pair:
+### Both sides have to describe the same person, and the script now enforces it
+
+An earlier version of this script took only `AUTHOR` — a git filter — and read the ActiveCollab side
+**unfiltered**. On a solo project that looks fine. On any shared project it compares one person's commits
+against the whole team's timesheet, so colleagues' logged hours land in that person's `logged` column and
+the delta stops meaning anything. Run the wrong way round — a team's commits against one person's
+timesheet — and it manufactures a large fake shortfall instead.
+
+So the script refuses to guess:
+
+| Invocation | What happens |
+|---|---|
+| `--user 6 --author <id> [--author …]` | Both sides filtered to one person. The useful case. |
+| `--team` | Both sides unfiltered, deliberately. Whole-firm habits. |
+| `--author` alone | **Refused** — logged side would be everybody. |
+| `--user` alone | **Refused** — measured side would be every committer. |
+| neither | **Refused** — says which flags to add. |
+
+`--user` is an ActiveCollab user id; `--author` is a git name/email substring and is **repeatable**,
+because people commit under several identities — work email, personal email, bare username, a GitHub
+noreply address. Four is normal. Pass every one you know of; missing one moves those commits out of the
+measured side without saying so. Get the identities from the repo itself rather than guessing:
+
+```bash
+git -C <repo> log --since=2026-06-01 --format='%aN <%aE>' | sort | uniq -c | sort -rn
+```
+
+It then does one ActiveCollab read for the window, runs `git-sittings.sh` once per clone group over the
+same window, and prints a row per pair:
 
 ```
 logging gap  2026-06-01 .. 2026-08-21
+  scope: logged side filtered to ActiveCollab user 6; measured side filtered to git identities …
   repo                             measured    logged    delta   ratio  signal
   claude-plugins                       7.50       5.8     -1.7    0.77  usable
   ---
   counted 1 pair(s): measured 7.5h vs logged 5.8h  (ratio 0.77)
   logged well below measured on commit-backed work — likely under-logging
+  ! 2.25h of the measured side is single-commit sittings — a floor, not a measurement
 ```
-
-**Set `AUTHOR` whenever a repo has more than one committer.** Without it, the measured side is the whole
-team's commits while the logged side is whatever you filtered to — comparing two different populations and
-calling the difference a gap.
 
 The measured side follows Avista's house rule: 45-minute gap starts a new sitting, each sitting measured
 first-commit → last-commit plus a 15-minute lead-in, rounded to 0.25h. Wall-clock elapsed is never used.
+
+Three things it now does that change the numbers, all of them reported in the output:
+
+- **Clone groups are deduplicated by SHA.** Shared code cloned into several checkouts is one body of work,
+  not several. Watch `commit_rows` vs `unique_commits`; a wide gap means the same afternoon was readable
+  from several paths and would have been counted repeatedly.
+- **Commits authored before `--from` are excluded** (pass `--allow-backdated` to keep them). A cherry-pick
+  that landed this month was worked last month and belongs on that invoice.
+- **Single-commit sittings are surfaced separately** as `floor_only_hours`. Those measure the lead-in
+  allowance alone, which is a floor rather than a measurement — never fold them into a headline as though
+  they were measured.
 
 ## Step 4 — Interpret it honestly
 
@@ -172,7 +228,7 @@ What it is not, and must not be presented as:
 - **Not a per-project verdict.** One project at 0.7 is a rounding artefact of how that week was committed.
   Ten projects clustered below 0.9 is a pattern, and the pattern is the answer to "are we under-logging in
   general".
-- **Not money.** Do not multiply a gap by `default_hourly_rate` (which `ac GET /job-types` does expose) to
+- **Not money.** Do not multiply a gap by `default_hourly_rate` (which `~/.claude/bin/ac GET /job-types` does expose) to
   produce lost revenue. Measure, do not price — and unlogged hours are not automatically billable hours.
 
 State the basis every time: which window, which repos, which author filter, how many pairs were excluded
@@ -211,3 +267,6 @@ timesheets feed invoices.
 | Every ratio is absurdly high | The projects are not commit-producing. There is nothing to compare. |
 | Headline ratio built on one pair | `signal_quality` excluded the rest. Say so; do not generalise from one. |
 | `git-sittings.sh not found` | Run from the plugin tree, or set `GIT_SITTINGS` to its path in `activecollab-suggest-time`. |
+| `refusing to run unfiltered by accident` | `logging-gap.sh` needs `--user` **and** `--author`, or an explicit `--team`. Working as intended. |
+| One person's gap looks enormous on a shared repo | Their `--author` list is incomplete, or a colleague's commits are in the measured side. Check the identity list against `git log --format='%aE'`. |
+| Measured hours far exceed anything anyone worked | A clone group was passed as separate pairs instead of one comma-separated group, so the same commits were counted per copy. |

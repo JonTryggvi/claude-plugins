@@ -147,5 +147,53 @@ me=$("$HOME/.claude/bin/ac" GET /users 2>&1 \
   | jq -r --arg e "$username" 'try (.[] | select(.email==$e) | "\(.id)\t\(.display_name)") catch empty')
 [ -n "$me" ] || die "the token was stored but a test call failed. Check $AC_URL is up and try again."
 echo "  authenticated as user_id $me"
+
+# --- 6. Is a bare `ac` safe to type on this machine? -------------------------
+#
+# macOS ships /usr/sbin/ac, a login-accounting tool, and ~/.claude/bin is not on
+# PATH by default. A bare `ac GET /users` therefore runs Apple's binary, prints
+# `total 0.00`, and EXITS 0 — a wrong answer that looks like an empty result and
+# raises no error anywhere. Every skill writes the full path for this reason, but
+# people type the short form, so say plainly what `ac` resolves to here.
+echo
+resolved=$(command -v ac 2>/dev/null || true)
+ALIAS_LINE='alias ac="$HOME/.claude/bin/ac"'
+case "${SHELL:-}" in
+  */zsh) RC="$HOME/.zshrc" ;;
+  */bash) RC="$HOME/.bashrc" ;;
+  *) RC="$HOME/.zshrc" ;;
+esac
+
+if [ "$resolved" = "$HOME/.claude/bin/ac" ]; then
+  echo "Bare \`ac\` resolves to our client. Nothing to do."
+elif [ -z "$resolved" ]; then
+  echo "Bare \`ac\` is not on PATH — the full path always works:"
+  echo "    ~/.claude/bin/ac GET /users"
+  echo "  To make the short form work, add this to $RC:"
+  echo "    $ALIAS_LINE"
+else
+  echo "WARNING: bare \`ac\` resolves to $resolved, NOT our client."
+  if [ "$resolved" = "/usr/sbin/ac" ]; then
+    echo "  That is macOS login accounting. \`ac GET /users\` prints \"total 0.00\" and exits 0,"
+    echo "  so a wrong answer reaches you with no error attached. Always call the full path:"
+  else
+    echo "  Something else owns that name. Always call the full path:"
+  fi
+  echo "    ~/.claude/bin/ac GET /users"
+  echo "  Or shadow it deliberately by adding this to $RC:"
+  echo "    $ALIAS_LINE"
+fi
+
+# Only write to a shell rc when explicitly asked. That file is the user's, and a
+# skill should not quietly edit persistent shell config on their behalf.
+if [ "${AC_INSTALL_ALIAS:-0}" = "1" ]; then
+  if [ -f "$RC" ] && grep -qF "$ALIAS_LINE" "$RC"; then
+    echo "  alias already present in $RC — left alone"
+  else
+    printf '\n# ActiveCollab API client (avista-activecollab plugin)\n%s\n' "$ALIAS_LINE" >> "$RC"
+    echo "  appended the alias to $RC — open a new shell, then: ac GET /users"
+  fi
+fi
+
 echo
 echo "Setup complete."

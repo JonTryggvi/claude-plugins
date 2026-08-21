@@ -1,6 +1,6 @@
 ---
 name: avista-activecollab-overview
-description: Overview of the avista-activecollab plugin — what it bundles, what each skill does, the order to use them in, and how authentication works. Use when the user asks "what does avista-activecollab do", "what's in this plugin", "how do I get started with ActiveCollab", "which ActiveCollab skill do I run first", "how do I create a task from Claude", "how do I read logged time", or right after installing the plugin.
+description: Overview of the avista-activecollab plugin — what it bundles, what each skill does, the order to use them in, and how authentication works. Use when the user asks "what does avista-activecollab do", "what's in this plugin", "how do I get started with ActiveCollab", "which ActiveCollab skill do I run first", "how do I create a task from Claude", "how do I read logged time", "how do I reconcile a month", "which skill do I use for month-end", or right after installing the plugin.
 ---
 
 # avista-activecollab — overview
@@ -19,20 +19,47 @@ Present this overview, then point the user at the right skill.
 | `activecollab-create-task` | Creates a task — resolves project, assignee and task list from names to IDs, writes the description to match what the task is *for* (see below), sets estimate/due date/labels, posts on approval. Also updates existing tasks. | Turning work into a ticket, before or after it happens. |
 | `activecollab-start-task` | Pulls a task and reads its description back out as a working brief, then starts once you confirm. | Picking up a ticket someone wrote for you. |
 | `activecollab-log-time` | Logs a time record against a task or project — resolves job type and person, posts on approval. | Recording hours actually worked. |
-| `activecollab-suggest-time` | Measures working time from the git log (commits grouped into sittings), finds candidate tasks — creating one when none exists — and proposes one entry per sitting. Refuses to guess when commits are a poor signal. | After finishing a feature, when you need to know what to log and against what. |
+| `activecollab-suggest-time` | Measures working time from the git log (commits grouped into sittings, SHA-deduplicated across clone groups, every identity a person commits under), finds candidate tasks — creating one when none exists — and proposes one entry per sitting. Refuses to guess when commits are a poor signal. | After finishing a feature, when you need to know what to log and against what. |
 | `activecollab-time-audit` | Reads logged time back — per task, project, person, or company over a date window — and compares it against git-measured hours to spot systematic under-logging. Read-only. | "How much is logged on this?" / "Are we under-logging?" |
+| `activecollab-project-map` | Persists the repo → project mapping: clone-group paths, project id, default task and job type, and an explicit `private` flag for repos that deliberately have no project. | **Once per repo**, then whenever `validate` reports drift. |
+| `activecollab-reconcile-period` | The month-end job: measures a whole window against what is logged, per project **and per date**, and proposes the difference one record per sitting. | Closing out a month or a period. |
+| `activecollab-evidence-sweep` | Finds billable work with no git trace — support email, meetings, phone fixes — via the Gmail and calendar connectors, and asks for the hours. | The measured total is obviously too low. |
+| `activecollab-invoice-preflight` | Per client, before billing: what is logged, what is billable and not yet invoiced, which dates have commits but no time — and what it could not verify. | Billing day. |
 
 ```
-1. activecollab-setup          ← once per machine
+0. activecollab-setup            ← once per machine
+   activecollab-project-map      ← once per repo, and `validate` before any reconciliation
 
-   activecollab-create-task    ← work needs a ticket (brief or record)
-   activecollab-start-task     ← picking one up: reads the prompt back out
-   activecollab-suggest-time   ← it landed: what to log, against which task
-   activecollab-log-time       ← writes it
-   activecollab-time-audit     ← reads it back: does logged match worked?
+   PER PIECE OF WORK
+     activecollab-create-task    ← work needs a ticket (brief or record)
+     activecollab-start-task     ← picking one up: reads the prompt back out
+     activecollab-suggest-time   ← it landed: what to log, against which task
+     activecollab-log-time       ← writes it
+
+   PER PERIOD (month-end)
+     activecollab-reconcile-period  ← measure the window vs what is logged, per date
+     activecollab-evidence-sweep    ← the work git cannot see; asks for hours
+     activecollab-log-time          ← writes the approved records
+     activecollab-invoice-preflight ← per client, before the invoice goes out
+
+   ANY TIME
+     activecollab-time-audit     ← read-only: does logged match worked?
 ```
 
-The middle four are a loop; the last one closes it from the other end.
+The per-work loop and the per-period loop answer different questions. `suggest-time` is *"I just finished
+this feature, what do I log?"*. `reconcile-period` is *"it is the 1st, what did the whole of last month
+actually contain?"* — a different measurement, because a period contains clone duplication, cherry-picked
+commits, dates already covered by an over-covering record, and whole categories of work that never touched
+git. Reaching for `suggest-time` repeatedly to cover a month gets all four of those wrong.
+
+Run them in this order at month-end, because each one narrows what the next has to look at:
+
+1. **`project-map validate`** — a stale mapping produces confident wrong attribution.
+2. **`reconcile-period`** — measures everything commit-backed and proposes per date.
+3. **`evidence-sweep`** — takes the dates still blank on both sides and looks for email/calendar evidence.
+4. **`log-time`** — writes what the user approved, and reads each record back.
+5. **`invoice-preflight`** — per client, confirms there is nothing left and says what it could not check.
+
 
 ## A task is either a brief or a record
 
@@ -72,8 +99,22 @@ with the unfiltered set. `/time-records?from=&to=` is the only date-windowed sou
 `Expense` records whose `value` is ISK rather than hours, and omits every project the token cannot read.
 
 `activecollab-time-audit` documents all of it and ships a script that reads through the one honest path and
-filters locally. Do not hand-roll a time report from `ac GET` calls without reading that skill first — the
-wrong endpoint gives a confident wrong number.
+filters locally. Do not hand-roll a time report from `~/.claude/bin/ac GET` calls without reading that skill
+first — the wrong endpoint gives a confident wrong number.
+
+Four more traps, all verified against the live instance, that decide whether a period total is right:
+
+| Trap | What actually happens |
+|---|---|
+| `GET /projects` | Caps at **100**; this instance has **213**. Use `GETALL` or half the projects are invisible and a real one looks missing. |
+| Finished tasks | `/projects/<id>/tasks` returns them as **bare ids** in `.completed_task_ids`. Names and numbers only come from `/projects/<id>/tasks/archive` — an **array**, where the open list is an object. Project 154 shows 2 open tasks and holds 27 archived. |
+| `billable_status` on write | Projects with `budget_type: not_billable` (7 of 213) store **`0`** whatever you send, silently. `is_billable` does not exist here — it reads `null`, so a check against it always passes. Read the record back. |
+| `GET /invoices` | **404** for a normal API token. There is no way to read invoices; `invoice_item_id != 0` on a time record is the only invoice signal available. |
+
+Two more that bite the measuring side rather than the API: shared repos cloned into several sites make the
+same commit readable from several paths (dedupe by SHA, and measure a clone group as the **union** — the
+standalone checkout is often the copy that is *behind*), and `--since`/`--until` filter **committer** date,
+so cherry-picked older work lands in the wrong period unless author date is checked too.
 
 ## How auth works
 
@@ -92,14 +133,23 @@ previous token, because ActiveCollab keys one subscription per `client_name` + `
 
 ## The `ac` client
 
-Setup installs `~/.claude/bin/ac`, a thin wrapper the skills call:
+Setup installs `~/.claude/bin/ac`, a thin wrapper the skills call.
+
+**Always the full path — never a bare `ac`.** macOS ships `/usr/sbin/ac`, a login-accounting tool, and
+`~/.claude/bin` is **not** on `PATH`. So `ac GET /users` runs Apple's binary, prints `total 0.00`, and
+**exits 0**. No error, no warning — a wrong answer wearing the costume of a successful call, and every
+number built on top of it inherits the mistake. In a reconciliation it reads as "nothing is logged this
+month", which is how a whole period gets double-posted. `activecollab-setup` step 6 reports what `ac`
+resolves to on the machine and offers to install an alias.
+
+
 
 ```bash
-ac GET    /users
-ac GETALL /projects                  # follows pagination
-ac POST   /projects/428/tasks '{"name":"Fix it","assignee_id":6}'
-ac PUT    /projects/428/tasks/91 '{"estimate":2.5}'
-ac DELETE /users/6/api-subscriptions/511
+~/.claude/bin/ac GET    /users
+~/.claude/bin/ac GETALL /projects                  # follows pagination
+~/.claude/bin/ac POST   /projects/428/tasks '{"name":"Fix it","assignee_id":6}'
+~/.claude/bin/ac PUT    /projects/428/tasks/91 '{"estimate":2.5}'
+~/.claude/bin/ac DELETE /users/6/api-subscriptions/511
 ```
 
 **Use `GETALL` for collections.** `/projects` is capped at 100 per page; Avista has 213. A plain `GET`
@@ -121,9 +171,24 @@ records feed invoicing. Deleting a time record destroys billable history — cor
 possible, and check `invoice_item_id` first, because a non-zero value means a client has already been
 billed against it.
 
-`activecollab-time-audit` is read-only by design, and its logged-vs-measured ratio is a measure of
-**logging discipline on commit-producing work** — never a person's productivity, and never multiplied by
-an hourly rate to produce a lost-revenue figure.
+`activecollab-time-audit`, `activecollab-invoice-preflight` and `activecollab-project-map` are read-only
+against ActiveCollab by design (the last writes one local file). `activecollab-reconcile-period` and
+`activecollab-evidence-sweep` propose records and post **only** what the user has seen and approved,
+record by record — they derive numbers rather than being told them, which is exactly why the human has to
+see each one before it reaches a timesheet.
+
+The logged-vs-measured ratio is a measure of **logging discipline on commit-producing work** — never a
+person's productivity, and never multiplied by an hourly rate to produce a lost-revenue figure.
+
+Two habits the period skills enforce because getting them wrong is expensive and invisible:
+
+- **Both sides of any comparison must describe the same person.** Filtering the git side to one author
+  while reading the whole team's timesheet reports colleagues' hours as that person's shortfall.
+  `logging-gap.sh` and `reconcile-period.sh` now refuse to run half-filtered rather than produce a number.
+- **A floor is not a measurement.** A sitting with one commit gets the lead-in allowance alone (0.25h) and
+  is reported separately. It never gets folded into a headline or quietly rounded up to something more
+  plausible — a guessed number on a timesheet is worse than a visibly conservative one, because nobody
+  knows to question it.
 
 ## More detail
 
