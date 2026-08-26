@@ -43,6 +43,46 @@ Read `plugin.json` to record the current `name` and `version`. The `name` field 
 - If the source directory is a git repo, verify the working tree is clean (no uncommitted changes outside the version bump you're about to make). If dirty, stop and report the dirty files. Do not bump version against an unclean tree.
 - **If the source directory is a git repo, verify local `main` is in sync with `origin/main`.** Run `git fetch origin main --tags --quiet` (the `--tags` keeps the local tag list current so the `git describe` in Step 3 doesn't read a stale tag), then verify `git rev-parse HEAD` equals `git rev-parse origin/main` (when on main) or `git merge-base --is-ancestor origin/main HEAD` returns 0 (when on a feature branch). If local is behind, the marketplace sync would ship stale code — stop and tell the user to `git pull --rebase` and rerun. If local is ahead with commits not on the remote, those commits will be in the release; confirm with the user that's intended.
 - **`gh` CLI is required.** This skill ships releases via a pull request, which needs `gh`. Run `gh auth status` — if it errors, stop and tell the user to `gh auth login` then rerun.
+- **The ACTIVE `gh` account must match the remote's host alias.** `gh auth status` passing is not enough: it reports that *some* account is authenticated, not that the right one is active for this repo. Avista developers hold two accounts, and the mapping is by remote URL (see `HANDOFF-setup-gh-multiuser.md` in the monorepo):
+
+  | Remote URL pattern | `gh` account |
+  |---|---|
+  | `github.com[:/]<personal>/*` | personal (e.g. `JonTryggvi`) |
+  | `github.com-avista[:/]Avista/*` | org (e.g. `jontryggviAvista`) |
+  | `github.com[:/]Avista/*` | org |
+
+  The reliable test is whether the active account can actually *see* the repo — not what
+  `gh auth status` claims. Derive `owner/repo` from the remote and ask:
+
+  ```bash
+  REMOTE=$(git remote get-url origin)
+  # BSD sed has no non-greedy +?, so strip .git first, then take the last owner/repo pair.
+  SLUG=$(printf '%s' "$REMOTE" | sed -E -e 's#\.git$##' -e 's#^.*[:/]([^/:]+/[^/]+)$#\1#')
+
+  if ! gh repo view "$SLUG" --json nameWithOwner >/dev/null 2>&1; then
+    echo "active gh account cannot see $SLUG — switching"
+    case "$REMOTE" in
+      *github.com-avista*|*Avista/*) gh auth switch --user <org-account> ;;
+      *)                             gh auth switch --user <personal-account> ;;
+    esac
+    gh repo view "$SLUG" --json nameWithOwner >/dev/null \
+      || { echo "still cannot see $SLUG — check 'gh auth status' and the account mapping"; exit 1; }
+  fi
+  ```
+
+  Run this **before** `git push`, not after. Ask the user for the account names if they are not already
+  known — the org username follows `<firstname>Avista`, but confirm rather than assume.
+
+  **This failure is easy to misread.** `git push` succeeds regardless, because SSH resolves through the
+  `github.com-avista` host alias independently of which `gh` account is active — so the branch lands on
+  the remote and only the *next* step fails, with `GraphQL: Could not resolve to a Repository with the
+  name 'Avista/claude-plugins'`. That message reads like a missing or renamed repo, not a wrong account.
+  Verified 2026-08-25 releasing `avista-activecollab` v0.8.0: the push worked, `gh pr create` did not,
+  and the fix was `gh auth switch --user jontryggviAvista`.
+
+  **Leave the account where the release needed it, and tell the user you did.** Switching back silently
+  is worse than not switching — a later bare `gh` command in a personal repo will use whichever account
+  is active, and the user needs to know which that is.
 
 If any check fails, report the issue and stop.
 
