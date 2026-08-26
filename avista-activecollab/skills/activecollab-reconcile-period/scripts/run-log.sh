@@ -38,12 +38,13 @@
 set -uo pipefail
 export LC_ALL="${LC_ALL:-en_US.UTF-8}"
 
+KIND=""
 LOG="${AC_RUN_LOG:-$HOME/.claude/activecollab-runs.jsonl}"
 CMD="${1:-}"; shift 2>/dev/null || true
 FROM=""; TO=""; USER_ID=""; RECORDS=""; DECISIONS=""; NOTE=""; LIMIT=10
 
 usage() {
-  echo "usage: run-log.sh check|append|show [--from D --to D --user ID] [--records id,id] [--decisions N] [--note T] [--limit N]" >&2
+  echo "usage: run-log.sh check|append|show [--from D --to D --user ID] [--records id,id] [--decisions N] [--note T] [--kind day|week|period] [--limit N]" >&2
   exit 64
 }
 
@@ -55,6 +56,7 @@ while [ $# -gt 0 ]; do
     --records)   RECORDS="${2:-}"; shift 2 ;;
     --decisions) DECISIONS="${2:-}"; shift 2 ;;
     --note)      NOTE="${2:-}"; shift 2 ;;
+    --kind)      KIND="${2:-}"; shift 2 ;;
     --limit)     LIMIT="${2:-10}"; shift 2 ;;
     -h|--help)   usage ;;
     *) echo "run-log.sh: unknown argument '$1'" >&2; usage ;;
@@ -71,7 +73,7 @@ append)
   [ -n "$FROM" ] && [ -n "$TO" ] && [ -n "$USER_ID" ] || { echo "run-log.sh append: --from, --to and --user are required" >&2; exit 64; }
   TMP=$(mktemp) || exit 70
   jq -nc --arg from "$FROM" --arg to "$TO" --arg u "$USER_ID" \
-        --arg recs "$RECORDS" --arg dec "$DECISIONS" --arg note "$NOTE" \
+        --arg recs "$RECORDS" --arg dec "$DECISIONS" --arg note "$NOTE" --arg kind "$KIND" \
         --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg host "$(hostname -s 2>/dev/null || echo unknown)" '
     ($recs | split(",") | map(select(. != "") | gsub("^\\s+|\\s+$";"") ) | map(select(test("^[0-9]+$")) | tonumber)) as $ids
     | {
@@ -82,7 +84,8 @@ append)
         records_posted: ($ids|length),
         record_ids: $ids,
         decisions_applied: (if $dec == "" then null else ($dec|tonumber) end),
-        note: (if $note == "" then null else $note end)
+        note: (if $note == "" then null else $note end),
+        kind: (if $kind == "" then null else $kind end)
       }' > "$TMP" || { rm -f "$TMP"; echo "run-log.sh: could not build the entry" >&2; exit 65; }
   cat "$TMP" >> "$LOG"; rm -f "$TMP"
   chmod 600 "$LOG" 2>/dev/null || true

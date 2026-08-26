@@ -23,6 +23,7 @@ Present this overview, then point the user at the right skill.
 | `activecollab-time-audit` | Reads logged time back — per task, project, person, or company over a date window — and compares it against git-measured hours to spot systematic under-logging. Read-only. | "How much is logged on this?" / "Are we under-logging?" |
 | `activecollab-project-map` | Persists the repo → project mapping: clone-group paths, project id, default task and job type, a `private` flag, **structured per-date decisions**, and the other projects a group's hours can land on. | **Once per repo**, then whenever `validate` reports drift — and after every judgement call. |
 | `activecollab-reconcile-period` | The month-end job: measures a whole window against what is logged, per project **and per date**, from **two** sources — git commits and Claude Code session attention — and proposes the difference one record per sitting. | Closing out a month or a period. |
+| `activecollab-audit` | **Start here for "what did I do and is it logged?"** — yesterday, last week, or the billing period. Measures session attention as a wall-clock **union** plus a **fair-share** split (the only per-project column that adds up), folds map entries by project id, reads client email, and proposes the difference. | Daily or weekly review, and opening a period. |
 | `activecollab-evidence-sweep` | Finds billable work with no git trace — support email, meetings, phone fixes — via the Gmail and calendar connectors, and asks for the hours. | The measured total is obviously too low. |
 | `activecollab-invoice-preflight` | Per client, before billing: what is logged, what is billable and not yet invoiced, which dates have commits but no time — and what it could not verify. | Billing day. |
 
@@ -37,12 +38,14 @@ Present this overview, then point the user at the right skill.
      activecollab-log-time       ← writes it
 
    PER PERIOD (month-end)
+     activecollab-audit             ← yesterday / last week / the period; resolves the window first
      activecollab-reconcile-period  ← measure the window vs what is logged, per date
      activecollab-evidence-sweep    ← the work git cannot see; asks for hours
      activecollab-log-time          ← writes the approved records
      activecollab-invoice-preflight ← per client, before the invoice goes out
 
    ANY TIME
+     activecollab-audit          ← "what did I work on yesterday, and is it logged?"
      activecollab-time-audit     ← read-only: does logged match worked?
 ```
 

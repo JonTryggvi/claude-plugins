@@ -31,6 +31,7 @@ export AC_FIXTURES="$HERE/fixtures"
 export AC_PROJECT_MAP="$WORK/map.json"
 export AC_RUN_LOG="$WORK/runs.jsonl"
 export CLAUDE_SESSION_STORE="$WORK/sessions"
+RL_AUDIT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/skills/activecollab-reconcile-period/scripts/run-log.sh"
 
 PASS=0; FAIL=0; SKIP=0
 declare -a FAILURES=()
@@ -270,6 +271,76 @@ if want runlog; then
   check "ignores another user"             "$(bash "$RL" check --from 2026-08-10 --to 2026-08-20 --user 21 | jq -r '.totals.runs_overlapping')" "0"
   bash "$RL" append --from 2026-09-01 --to 2026-09-30 --user 6 --records "1,2,3" >/dev/null 2>&1
   check "append records the ids"           "$(tail -1 "$AC_RUN_LOG" | jq -r '.records_posted')" "3"
+  echo
+fi
+
+# ------------------------------------------------------------- audit window ---
+if want audit; then
+  echo "activecollab-audit — resolve-window.sh"
+  RW="$SK/activecollab-audit/scripts/resolve-window.sh"
+  AW="$WORK/audit-runs.jsonl"
+
+  # BSD `date -v` needs an explicit + on forward offsets: `-v2d` SETS the
+  # day-of-month to 2, it does not add two days, and it exits 0 either way.
+  # That silently turned a 2026-09-21 boundary into 2026-09-02 and a
+  # 2026-08-22 period start into 2026-08-01. Pin both directions.
+  check "yesterday is one day back, not day-of-month 1" \
+    "$(AC_RUN_LOG=$AW bash "$RW" yesterday --today 2026-09-01 2>/dev/null | jq -r '.window.from')" "2026-08-31"
+  check "a weekend-shifted boundary adds days, not sets them" \
+    "$(AC_RUN_LOG=$AW bash "$RW" period --today 2026-09-25 2>/dev/null | jq -r '.end_alternatives[0].date')" "2026-09-21"
+
+  # 19 Sep 2026 is a Saturday -> Monday the 21st. 19 Oct 2026 is a Monday -> no shift.
+  check "Saturday boundary moves to Monday" \
+    "$(AC_RUN_LOG=$AW bash "$RW" period --today 2026-09-25 2>/dev/null | jq -r '.window.to')" "2026-09-21"
+  check "a weekday boundary is left alone" \
+    "$(AC_RUN_LOG=$AW bash "$RW" period --today 2026-10-25 2>/dev/null | jq -r '.window.to')" "2026-10-19"
+
+  # THE BOUNDARY TRAP: a one-day audit logged later than a period run has a
+  # LATER window end. Resolving the next period start from it drops 22-23 Aug.
+  : > "$AW"
+  AC_RUN_LOG=$AW bash "$RL_AUDIT" append --from 2026-07-22 --to 2026-08-21 --user 6 --note p --kind period >/dev/null 2>&1
+  AC_RUN_LOG=$AW bash "$RL_AUDIT" append --from 2026-08-24 --to 2026-08-24 --user 6 --note d --kind day    >/dev/null 2>&1
+  check "period start ignores a later DAY run (kind)" \
+    "$(AC_RUN_LOG=$AW bash "$RW" period --today 2026-09-25 2>/dev/null | jq -r '.window.from')" "2026-08-22"
+
+  # Same trap for entries written before `kind` existed: the 21-day heuristic.
+  : > "$AW"
+  AC_RUN_LOG=$AW bash "$RL_AUDIT" append --from 2026-07-22 --to 2026-08-21 --user 6 --note p >/dev/null 2>&1
+  AC_RUN_LOG=$AW bash "$RL_AUDIT" append --from 2026-08-24 --to 2026-08-24 --user 6 --note d >/dev/null 2>&1
+  check "period start ignores a later DAY run (legacy, unlabelled)" \
+    "$(AC_RUN_LOG=$AW bash "$RW" period --today 2026-09-25 2>/dev/null | jq -r '.window.from')" "2026-08-22"
+
+  # With no period run at all the start is a guess, and must say so.
+  : > "$AW"
+  check "an empty log marks the start inferred" \
+    "$(AC_RUN_LOG=$AW bash "$RW" period --today 2026-09-25 2>/dev/null | jq -r '.provenance.start')" "inferred"
+  check "and asks for confirmation" \
+    "$(AC_RUN_LOG=$AW bash "$RW" period --today 2026-09-25 2>/dev/null | jq -r '.needs_confirmation')" "true"
+  check "yesterday needs no confirmation" \
+    "$(AC_RUN_LOG=$AW bash "$RW" yesterday --today 2026-09-25 2>/dev/null | jq -r '.needs_confirmation')" "false"
+  check "recommended end is offered first" \
+    "$(AC_RUN_LOG=$AW bash "$RW" period --today 2026-09-25 2>/dev/null | jq -r '.end_alternatives[0].label')" "recommended"
+  echo
+
+  echo "activecollab-audit — attention-split.sh"
+  AS="$SK/activecollab-audit/scripts/attention-split.sh"
+  bash "$AS" --from 2026-08-01 --to 2026-08-31 --map "$AC_PROJECT_MAP" > "$WORK/split.json" 2>/dev/null
+
+  # An empty store and an idle window both read 0.00h. They must not look alike.
+  bash "$AS" --from 2019-01-01 --to 2019-01-02 --map "$AC_PROJECT_MAP" > "$WORK/split-empty.json" 2>/dev/null
+  check "an empty store is declared, not reported as zero" \
+    "$(jq -r '.empty_store' "$WORK/split-empty.json")" "true"
+
+  # Fair-share is the only per-project column that sums back to the union.
+  checkc "fair-share reconciles against the union" \
+    "$(jq -r 'if (.totals.union_hours - (.totals.fair_share_work_hours + .totals.fair_share_private_hours) | fabs) < 0.05
+              then "ok" else "drift" end' "$WORK/split.json")" "ok"
+  checkc "union is never below fair-share for a project" \
+    "$(jq -r 'if all(.projects[]; .union_hours >= .fair_share_hours - 0.01) then "ok" else "inverted" end' "$WORK/split.json")" "ok"
+
+  # Several map entries on one project id must FOLD, not multiply it.
+  checkc "one row per project id, never one per map slug" \
+    "$(jq -r '[.projects[] | select(.project_id != null) | .project_id] | (length == (unique | length))' "$WORK/split.json")" "true"
   echo
 fi
 
