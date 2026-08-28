@@ -252,7 +252,19 @@ A cached mapping decays. `validate` checks every stored entry against the live i
 - a `project_id` that is no longer in `GETALL /projects` — archived, deleted, or not readable by this token
 - a project that has been **renamed** since it was recorded
 - a `budget_type` that has **changed**, because that changes whether records store as billable
-- repo paths that no longer exist
+- repo paths that no longer exist — tested with `-d`, so a directory that exists but holds no repo is
+  **not** reported as gone
+
+A `repos` list may legitimately hold **non-repo directories**: a WordPress root, a Local site root, a
+plugins parent folder. `session-time.sh` matches a session `cwd` by exact lookup and only folds *upward*
+to a git toplevel, so a directory that merely contains a repo never folds on its own and has to be listed
+or its sessions land unmapped. `validate` reports those separately as `non-repo path(s) held for session
+attribution (not a problem)` and they do not affect the exit summary. Do not delete such a path to quieten
+`validate` — that reinstates the attribution hole it was added to close.
+
+A path that is **deleted from disk but deliberately retained** — a pre-migration clone whose historical
+sessions still need attributing — will keep showing as gone. That is working as intended; record why in
+the entry's `note` so the next person does not remove it.
 
 Run it at the start of any reconciliation. A stale map produces confident wrong attribution, which is
 harder to spot than an error.
@@ -283,4 +295,5 @@ harder to spot than an error.
 | A date settled last month is proposed again | The decision was prose in a `note`, or was never recorded. Use `decide`. |
 | `decide` refuses without a reason | Deliberate. An unexplained decision gets reversed by the next person. |
 | A date is covered by another project and still proposed | Add that project to `also_logged_under`. |
+| `validate` says a path is gone but the folder is right there | It exists and holds no repo. Fixed: `-d` is tested before `rev-parse`, and non-repo paths report separately. |
 | `validate` reports a project as unreadable | Some projects 404 for this token; their hours are real but unattributable. Do not guess a replacement. |

@@ -406,10 +406,22 @@ validate)
   "$AC" GETALL /projects > "$TMP/p.json" 2>/dev/null || echo '[]' > "$TMP/p.json"
   jq -e 'type=="array"' < "$TMP/p.json" >/dev/null 2>&1 || echo '[]' > "$TMP/p.json"
 
+  # Three states, not two. A path can be (a) a live git repo, (b) a directory that
+  # exists but is not a repo, or (c) gone from disk. Only (c) is a problem.
+  #
+  # (b) is legitimate and deliberate: a `repos` list also carries non-repo session
+  # working directories — a WordPress root, a Local site root, a plugins parent
+  # folder — so that session attribution can fold them onto the entry's real repo.
+  # session-time.sh matches a cwd by exact lookup and only folds UPWARD to a git
+  # toplevel, so a directory that merely *contains* a repo never folds on its own
+  # and has to be listed. Testing those with `rev-parse` alone reported them as
+  # "path(s) gone" forever, and the obvious way to silence that false positive is
+  # to delete the path — which silently reinstates the attribution hole it fixed.
   : > "$TMP/paths.tsv"
   jq -r '.entries[]? | .slug as $s | (.repos // [])[] | "\($s)\t\(.)"' < "$MAP" | while IFS=$'\t' read -r slug path; do
-    if git -C "$path" rev-parse --git-dir >/dev/null 2>&1; then printf '%s\t%s\tok\n' "$slug" "$path" >> "$TMP/paths.tsv"
-    else printf '%s\t%s\tmissing\n' "$slug" "$path" >> "$TMP/paths.tsv"; fi
+    if [ ! -d "$path" ]; then printf '%s\t%s\tmissing\n' "$slug" "$path" >> "$TMP/paths.tsv"
+    elif git -C "$path" rev-parse --git-dir >/dev/null 2>&1; then printf '%s\t%s\tok\n' "$slug" "$path" >> "$TMP/paths.tsv"
+    else printf '%s\t%s\tnon_repo\n' "$slug" "$path" >> "$TMP/paths.tsv"; fi
   done
 
   jq -R -s --slurpfile map "$MAP" --slurpfile proj "$TMP/p.json" '
@@ -428,7 +440,8 @@ validate)
                            and ($x.project_name != $pmap[(($x.project_id // 0)|tostring)].name)),
             budget_type_now: ($pmap[(($x.project_id // 0)|tostring)].budget_type // null),
             budget_type_stored: $x.budget_type,
-            missing_paths: [ $paths[] | select(.slug == $x.slug and .state == "missing") | .path ]
+            missing_paths: [ $paths[] | select(.slug == $x.slug and .state == "missing") | .path ],
+            non_repo_paths: [ $paths[] | select(.slug == $x.slug and .state == "non_repo") | .path ]
           } ]
       }
     | .problems = [ .entries[] | select((.project_ok == false) or .name_drifted
@@ -443,6 +456,7 @@ validate)
     jq -r '.problems[] | select(.name_drifted) | "  ! \(.slug): project renamed \"\(.project_name_stored)\" -> \"\(.project_name_now)\""' < "$TMP/out.json"
     jq -r '.problems[] | select((.budget_type_stored != null) and (.budget_type_now != null) and (.budget_type_stored != .budget_type_now)) | "  ! \(.slug): budget_type changed \(.budget_type_stored) -> \(.budget_type_now) — billable behaviour has changed"' < "$TMP/out.json"
     jq -r '.problems[] | select((.missing_paths|length) > 0) | "  ! \(.slug): path(s) gone — \(.missing_paths|join(", "))"' < "$TMP/out.json"
+    jq -r '.entries[] | select((.non_repo_paths|length) > 0) | "  - \(.slug): \(.non_repo_paths|length) non-repo path(s) held for session attribution (not a problem) — \(.non_repo_paths|join(", "))"' < "$TMP/out.json"
   } >&2
   ;;
 
