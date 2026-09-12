@@ -1,11 +1,13 @@
 ---
 name: bootstrap-agent-md
-description: "Generate a project-local CLAUDE.md from the project's source — surveys structure, reads README and package manifests, scans recent commits, detects the project type, and proposes a CLAUDE.md covering architecture, conventions, workflows, and gotchas specific to that codebase. Use when the user says bootstrap CLAUDE.md, scaffold a CLAUDE.md, generate a project CLAUDE.md, this project needs a CLAUDE.md, set up CLAUDE.md for this repo, init agent-md, create CLAUDE.md from this project's source, or when joining an existing project that has no CLAUDE.md yet. Targets project-local CLAUDE.md files (loaded by both Cowork and Claude Code) — do not use to write the global ~/.claude/CLAUDE.md (that file is curated by hand, not generated). Pairs with agent-md-audit: bootstrap creates, audit prunes."
+description: "Generate a project-local CLAUDE.md from the project's source — surveys structure, reads README and package manifests, scans recent commits, detects the project type, and proposes a CLAUDE.md covering architecture, conventions, workflows, and gotchas specific to that codebase, splitting anything that only applies to part of the tree into path-scoped .claude/rules/ files. Use when the user says bootstrap CLAUDE.md, scaffold a CLAUDE.md, generate a project CLAUDE.md, this project needs a CLAUDE.md, set up CLAUDE.md for this repo, init agent-md, create CLAUDE.md from this project's source, or when joining an existing project that has no CLAUDE.md yet. Targets project-local CLAUDE.md files and .claude/rules/ — do not use to write the global ~/.claude/CLAUDE.md (that file is curated by hand, not generated). Pairs with agent-md-audit: bootstrap creates, audit prunes."
 ---
 
 # Bootstrap a project's CLAUDE.md
 
 Produce a project-local `CLAUDE.md` from what the project itself reveals — its structure, its docs, its package manifests, its recent history. The output is project-specific content that future sessions in this repo load automatically. Generic boilerplate is the failure mode; the skill exists to produce something the user wouldn't write by hand because it would be tedious, not to produce something a template could.
+
+**Related built-in:** `/init` generates a starting CLAUDE.md too, and with `CLAUDE_CODE_NEW_INIT=1` runs an interactive multi-phase flow that also offers to scaffold skills and hooks, and reads Cursor, Copilot and `AGENTS.md` configs. Prefer `/init` when the project has existing agent configs from another tool to carry over, or when the user wants skills and hooks scaffolded in the same pass. Use this skill when the user wants a CLAUDE.md proposed in-conversation and reviewed section by section before anything is written, with the survey signal for each section shown alongside it.
 
 ## When to invoke
 
@@ -73,6 +75,22 @@ Compose a CLAUDE.md with these candidate sections — include only those that th
 
 **Gotchas** — non-obvious things that bit someone before. Source: in-repo docs that include "Why" or "Caveats" sections; recent commits with messages like "fix:" reveal what's been getting bitten. Ask the user to confirm any gotcha proposals — these are easy to misread.
 
+**Size target: under 200 lines.** Longer files consume more context every session and measurably reduce adherence. If the survey produced more material than that, don't pad it into CLAUDE.md — split the overflow (see path-scoped rules below), or cut to what a new teammate genuinely couldn't derive in five minutes.
+
+**Scope what's scopeable.** An instruction that only applies to part of the codebase belongs in `.claude/rules/<topic>.md` with `paths:` frontmatter, not in CLAUDE.md — it then loads only when Claude opens a matching file:
+
+```markdown
+---
+paths:
+  - "**/*.php"
+---
+
+# PHP conventions
+- Short array syntax only. Scalar type declarations on parameters and returns.
+```
+
+Propose these alongside the CLAUDE.md rather than folding them into it. Rules without a `paths:` field load unconditionally and save nothing, so if you can't name a glob, keep the content in CLAUDE.md. Note that `.claude/rules/` files are version-controlled and shared with the team, same as CLAUDE.md.
+
 **What this project does NOT need** to be in CLAUDE.md:
 
 - Anything in the user's global `~/.claude/CLAUDE.md` (universal preferences, coding style, interaction rules). Reference the global file once if relevant: "Global rules apply per `~/.claude/CLAUDE.md`."
@@ -82,10 +100,11 @@ Compose a CLAUDE.md with these candidate sections — include only those that th
 
 ### Step 5 — Present the proposal
 
-Show the user the proposed `CLAUDE.md` in full — not as a diff (there's no existing file), as the *complete proposed content*. Below it, list:
+Show the user the proposed `CLAUDE.md` in full — not as a diff (there's no existing file), as the *complete proposed content*. Show any proposed `.claude/rules/` files in full too, each with its `paths:` globs. Below it, list:
 
 - What sections you included and the signal for each ("Architecture: read from src/ structure and ARCHITECTURE.md")
 - What sections you considered and skipped, and why ("Skipped Gotchas: no in-repo notes found, no obvious recent fix-pattern in commits — happy to add if you tell me what's bitten you")
+- The line count against the ~200-line target.
 - One open question per uncertainty ("The README mentions both `npm run build` and `npm run dev` — is one canonical?")
 
 ### Step 6 — STOP, wait for approval
@@ -106,16 +125,17 @@ Honor whichever response they give.
 After approval:
 
 1. Back up nothing — there's no file to back up (refusal step caught the existing-file case).
-2. Write `<project-root>/CLAUDE.md` with the approved content.
-3. If the project is a git repo with a clean working tree, propose a commit: `chore: add CLAUDE.md`. Run `git add CLAUDE.md && git commit -m "chore: add CLAUDE.md" && git push` (or hand off to the user if you can't write to the repo from the current environment — e.g. Cowork's sandboxed bash can't acquire git locks on a mounted Dropbox repo). Do not auto-commit a dirty tree.
+2. Write `<project-root>/CLAUDE.md` with the approved content, plus any approved `.claude/rules/*.md` files.
+3. If the project is a git repo with a clean working tree, commit the files this skill wrote: `git add CLAUDE.md .claude/rules && git commit -m "chore: add CLAUDE.md"`. **Do not push** — that's the user's call. Do not auto-commit a dirty tree; if there are unrelated changes staged or modified, say so and let the user commit. If you can't write to the repo from the current environment (a sandboxed bash that can't acquire git locks on a mounted repo), hand the command to the user instead of retrying.
 
 ### Step 8 — Suggest follow-ups
 
 After writing, tell the user:
 
-- The file is loaded automatically on the next session in this project (both Claude Code and Cowork pick up project-local `CLAUDE.md` files).
+- The file loads automatically at the start of the next session in this tree. Confirm it with `/context` — it appears under **Memory files**. Any `.claude/rules/` files without `paths:` load the same way; path-scoped ones load when Claude first opens a matching file.
 - If the project gains a major component (new strategy, new pipeline, new external integration), come back and either rerun this skill (it'll refuse, route to audit) or edit by hand.
-- `agent-md-audit` is the right tool for periodic pruning once the CLAUDE.md has been live for a while.
+- `agent-md-audit` is the right tool for periodic pruning once the CLAUDE.md has been live for a while — it also reclassifies sections into skills, path-scoped rules, and memory.
+- Facts about the *user* or the current state of the *work* don't belong here at all; Claude accumulates those in auto-memory on its own.
 
 ## Notes on quality
 

@@ -1,11 +1,13 @@
 ---
 name: agent-md-audit
-description: "Audit a CLAUDE.md or AGENTS.md file and classify each section as either a universal rule to keep, a workflow that should become a skill, personal context that belongs in memory, a duplicate to replace with a one-line pointer, or content to delete. Proposes a pruned version with reasoning per section, waits for approval, applies the prune with a timestamped backup. Use when the user says audit my CLAUDE.md, audit my AGENTS.md, review CLAUDE.md, what should I prune from CLAUDE.md, is anything in here a skill, clean up CLAUDE.md, is CLAUDE.md bloated, or after migrating workflow content into a new plugin and wanting to find what is now redundant. Works on the global ~/.claude/CLAUDE.md, any project-local CLAUDE.md, or any agent-instructions file with the same shape."
+description: "Audit a CLAUDE.md or AGENTS.md file and classify each section as either a universal rule to keep, a workflow that should become a skill, an instruction that should become a path-scoped rule under .claude/rules/, personal context that belongs in memory, a duplicate to replace with a one-line pointer, or content to delete. Proposes a pruned version with reasoning per section, waits for approval, applies the prune with a timestamped backup. Use when the user says audit my CLAUDE.md, audit my AGENTS.md, review CLAUDE.md, what should I prune from CLAUDE.md, is anything in here a skill, clean up CLAUDE.md, is CLAUDE.md bloated, or after migrating workflow content into a new plugin and wanting to find what is now redundant. Works on the global ~/.claude/CLAUDE.md, any project-local CLAUDE.md, or any agent-instructions file with the same shape."
 ---
 
 # Audit a CLAUDE.md for content that belongs elsewhere
 
-CLAUDE.md content is loaded into context on every turn. Anything that doesn't apply to *every* interaction is paying a per-turn token cost it doesn't deserve. This skill finds those sections, classifies them, and produces a pruned version with a backup of the original.
+CLAUDE.md content is loaded into context at the start of every session. Anything that doesn't apply to *every* interaction is paying a token cost it doesn't deserve, and longer files measurably reduce adherence — Anthropic's guidance is to target **under 200 lines per CLAUDE.md file**. This skill finds the sections that shouldn't be there, classifies them, and produces a pruned version with a backup of the original.
+
+**Related built-in:** `/doctor` (Claude Code v2.1.206+) proposes trims for a checked-in CLAUDE.md, cutting content derivable from the codebase. This skill goes further — it classifies each section by *where the content should go instead*, migrates memory-bound facts before pruning, and handles the global `~/.claude/CLAUDE.md`, which `/doctor` doesn't target. Run `/doctor` for a fast pass on a project file; run this when you want the content relocated rather than dropped.
 
 The audit surfaces *what* should move and *where*. For MOVE-TO-SKILL sections, the move itself is a separate act the user performs later (building a skill is its own job). For MOVE-TO-MEMORY sections, the audit performs the migration during Step 6 — writing the memory file *before* pruning from CLAUDE.md — so that approving the prune cannot accidentally drop an operational fact on the floor.
 
@@ -13,7 +15,7 @@ The audit surfaces *what* should move and *where*. For MOVE-TO-SKILL sections, t
 
 - The user explicitly asks for an audit ("audit my CLAUDE.md", "what should I prune", etc.).
 - The user has just shipped a new plugin and might have stale workflow content in CLAUDE.md (e.g. instructions that duplicate what the plugin's skills now cover).
-- A CLAUDE.md file is conspicuously long (over ~150 lines is a soft signal; over ~250 is a strong one).
+- A CLAUDE.md file is over the ~200-line target (a soft signal at 200, a strong one past ~250).
 
 Do not use this skill on files that are not CLAUDE.md (skill audits, project doc audits — out of scope).
 
@@ -61,6 +63,24 @@ Examples: "I'm Jón Tryggvi, dev at Avista" (user memory), "The 2026 competition
 
 When in doubt about whether something is an operational fact, **err toward MOVE-TO-MEMORY**. The cost of needlessly migrating a non-critical fact is one extra memory file; the cost of accidentally DELETEing an SSH string is digging through git history at 11pm during an incident.
 
+**MOVE-TO-RULE** — an instruction that is genuinely a rule, but only applies to part of the codebase. These belong in `.claude/rules/<topic>.md` with `paths:` frontmatter, so they load only when Claude touches a matching file instead of on every session.
+
+```markdown
+---
+paths:
+  - "src/api/**/*.ts"
+---
+
+# API rules
+- All endpoints validate input before dispatch.
+```
+
+Examples: "All React components go in `src/components/` and use function syntax" (scope it to `**/*.tsx`), "Migrations must be reversible" (scope it to `db/migrations/**`), "Never use `switch` in JS" if the repo is polyglot and the rule is JS-only.
+
+Rules live in the project at `.claude/rules/` (team-shared, version-controlled) or in `~/.claude/rules/` (personal, every project on the machine, no external-import approval needed). Rules with no `paths:` field load unconditionally at the same priority as `.claude/CLAUDE.md` — so moving a section there without a `paths:` field saves nothing. **If you can't name a glob for it, it isn't a MOVE-TO-RULE; it's a KEEP.**
+
+Distinguishing it from MOVE-TO-SKILL: a rule is a *constraint* that should be in force whenever Claude touches matching files. A skill is a *procedure* Claude runs on request. "Endpoints validate input" is a rule; "here's how to add a new endpoint" is a skill.
+
 **REPLACE-WITH-POINTER** — content that already lives elsewhere (in a plugin, in a memory file, in another CLAUDE.md) and exists here only as a duplicated copy. Replace with a one-line pointer.
 
 Examples: the full PUC class implementation after `avista-wp-releases` ships (the skill bundles the template; CLAUDE.md just needs to say "the autoupdater scaffold lives in `avista-wp-releases:setup-plugin-autoupdate`"). The "WordPress Composer / vendor" guards if the conventions doc inside `avista-wp-releases` already covers them — replace with "see `avista-wp-releases:setup-plugin-autoupdate` references/conventions.md".
@@ -78,6 +98,7 @@ Show the user a table:
 |---|---|---|---|---|
 | Git Workflow | 8 | KEEP | Universal rule | — |
 | Auto-Updater (GitHub Releases) | 64 | REPLACE-WITH-POINTER | Covered by avista-wp-releases plugin | avista-wp-releases:setup-plugin-autoupdate |
+| PHP conventions | 22 | MOVE-TO-RULE | Only applies to PHP files | `.claude/rules/php.md` (`paths: ["**/*.php"]`) |
 | (etc.) | | | | |
 ```
 
@@ -102,16 +123,20 @@ After approval:
 2. **Migrate MOVE-TO-MEMORY sections** to the appropriate memory store *before* pruning them from CLAUDE.md. For each MOVE-TO-MEMORY section:
 
    - **Pick a target location.** In order of preference:
-     1. Cowork's auto-memory store (`~/Library/Application Support/Claude/local-agent-mode-sessions/<...>/spaces/<id>/memory/`) — use this when running in a Cowork session and the space is reachable.
-     2. The project's local memory directory if it exists (e.g. `<project>/memory/`, `<project>/.claude/memory/`, `<project>/docs/`) — use this when auditing a project-local CLAUDE.md.
-     3. Ask the user where to save it — only if neither of the above is reachable.
-   - **Write the memory file.** Frontmatter with `name`, `description`, `metadata: type: <user|project|reference>`, then the section content as body. For Cowork auto-memory, also add the file to `MEMORY.md` per the auto-memory rules.
+     1. **The auto-memory store for this repo** — `~/.claude/projects/<project>/memory/`, unless `autoMemoryDirectory` is set in `settings.json` (user, project or local scope), in which case that path wins. This is the default target and the right one in almost every case. One store per git repository, shared across its worktrees. Locate it by matching the repo path against `ls -d ~/.claude/projects/*/memory` rather than guessing at the directory mangling.
+     2. A Cowork space store (`~/Library/Application Support/Claude/local-agent-mode-sessions/<...>/spaces/<id>/memory/`) — only when running inside a Cowork session whose space is reachable.
+     3. The project's own in-repo docs (e.g. `<project>/docs/`) — only when the fact is meant to be **shared with the team through version control**. Auto-memory is machine-local and never syncs, so a fact teammates need cannot live there.
+     4. Ask the user — only if none of the above applies.
+   - **Write the memory file.** Frontmatter with `name`, `description`, and `metadata.type` set to one of `user`, `feedback`, `project`, `reference`; then the section content as the body, with **Why:** and **How to apply:** lines for `feedback` and `project` entries. Add a matching `- [Title](file.md) — hook` line to `MEMORY.md`. Don't add a `modified` field — Claude Code stamps it on write.
+   - **Don't migrate what memory rejects.** Auto-memory deliberately excludes anything derivable from the codebase (architecture, file paths, debugging fixes) and anything a CLAUDE.md already says. A section that is *only* derivable content is a DELETE, not a MOVE-TO-MEMORY. Never migrate a secret — a pointer to where a credential is kept is a `reference` memory; the credential itself belongs in the password manager.
    - **Verify the write.** Read the file back. If the read fails or the content doesn't match what was written, treat the migration as failed.
    - **If migration fails or no target is reachable:** add the section to a "could-not-migrate" list. Do **not** remove this section from CLAUDE.md in the next step. Operational-fact sections (per the patterns in Step 3) must succeed migration or stay in CLAUDE.md — refuse to prune them blindly even if the user asked you to.
 
-3. **Write the pruned CLAUDE.md.** All KEEP sections stay verbatim. MOVE-TO-MEMORY sections that migrated successfully are removed. MOVE-TO-MEMORY sections in the could-not-migrate list stay in place. REPLACE-WITH-POINTER sections are replaced with their one-line pointer. DELETE sections are removed. MOVE-TO-SKILL sections stay in CLAUDE.md (with the suggestion preserved in the Step 7 report) since the user builds those skills separately.
+3. **Write the MOVE-TO-RULE files.** For each, create `.claude/rules/<topic>.md` (or `~/.claude/rules/<topic>.md` when the rule is personal rather than team-shared) containing `paths:` frontmatter and the section body. These migrate like memory does — write the rule file *before* pruning the section, verify the write, and leave the section in place if it fails.
 
-4. **Commit (if applicable).** If the target is a project-local CLAUDE.md and the project's working tree is clean apart from the audit's changes, commit with `chore: prune CLAUDE.md (audit + relocate content)`. Skip the commit if the tree was dirty. Do not push. Do not commit the memory file writes (those go to memory stores outside the repo).
+4. **Write the pruned CLAUDE.md.** All KEEP sections stay verbatim. MOVE-TO-MEMORY and MOVE-TO-RULE sections that migrated successfully are removed. Sections in the could-not-migrate list stay in place. REPLACE-WITH-POINTER sections are replaced with their one-line pointer. DELETE sections are removed. MOVE-TO-SKILL sections stay in CLAUDE.md (with the suggestion preserved in the Step 7 report) since the user builds those skills separately.
+
+5. **Commit (if applicable).** If the target is a project-local CLAUDE.md and the project's working tree is clean apart from the audit's changes, commit with `chore: prune CLAUDE.md (audit + relocate content)`. Include any `.claude/rules/` files written — those live in the repo and are meant to be shared. Skip the commit if the tree was dirty. Do not push. Do not commit memory file writes — those go to a machine-local store outside the repo.
 
 If the target is `~/.claude/CLAUDE.md`, there is no repo to commit to — just write and report.
 
@@ -121,14 +146,16 @@ After execution:
 
 - Backup directory path.
 - New file's line count (vs. original — show the delta).
-- Per-classification counts (how many KEEP / MOVE-TO-SKILL / MOVE-TO-MEMORY / REPLACE-WITH-POINTER / DELETE).
-- **Memory migrations performed** — for each MOVE-TO-MEMORY section that was migrated, list the section heading and the full path to the memory file written. Make this section prominent in the report; the user should be able to scan it and confirm nothing critical was misplaced.
+- Per-classification counts (how many KEEP / MOVE-TO-SKILL / MOVE-TO-RULE / MOVE-TO-MEMORY / REPLACE-WITH-POINTER / DELETE).
+- New line count against the ~200-line target.
+- **Rules written** — each `.claude/rules/` file created, with its `paths:` globs, so the user can confirm the scope is right. A too-narrow glob silently stops a rule from ever loading.
+- **Memory migrations performed** — for each MOVE-TO-MEMORY section that was migrated, list the section heading and the full path to the memory file written, and name the store it went to. Make this section prominent in the report; the user should be able to scan it and confirm nothing critical was misplaced.
 - **Sections left in place** (if any) — MOVE-TO-MEMORY sections that couldn't be migrated. Show what couldn't migrate, why (no target reachable, write failed, operational-fact safety hold), and what the user needs to do to handle them manually.
 - The list of MOVE-TO-SKILL items as suggested next actions: "These sections were classified as skill candidates — build a skill for each one when ready, then re-run this audit to replace them with one-line pointers."
 
 ## Classification edge cases
 
-**"This rule only applies when I'm working in PHP."** Still KEEP if it's terse and the user does PHP frequently. The token cost of "always use single quotes in PHP" is two lines per turn; the alternative (a skill that loads when PHP context is detected) is heavier infrastructure for thinner payoff. Lean toward KEEP for terse conditional rules. Lean toward MOVE-TO-SKILL when the conditional content is a multi-step procedure or includes code blocks longer than ~15 lines.
+**"This rule only applies when I'm working in PHP."** Three-way call. KEEP if it's terse and the user does PHP constantly — "always use single quotes in PHP" costs two lines and always being in force is worth that. MOVE-TO-RULE once the PHP-specific content runs to more than a handful of lines and you can name the glob (`**/*.php`): it then loads only when Claude opens a PHP file, at no cost the rest of the time. MOVE-TO-SKILL when the conditional content is a multi-step *procedure* or includes code blocks longer than ~15 lines. The test between the last two: a constraint that should hold whenever Claude touches those files is a rule; something Claude performs on request is a skill.
 
 **"This is a safety rule but it's also pretty long."** Bias toward KEEP. The token cost of an always-loaded safety rule is justified by the cost of one missed application of it.
 
