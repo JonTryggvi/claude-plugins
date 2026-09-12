@@ -66,9 +66,16 @@ Also check per-line length: index entries should be one line, under ~150 chars. 
 
 **Do not require `name:` to match the filename.** There is no such rule, filenames use both hyphens and underscores, and enforcing it produces false errors on roughly a fifth of a real store. Mention a mismatch only if the user asks for naming consistency.
 
-**Check 3 — Wiki-link resolution.** For each `[[name]]` in a memory body, check that a file with that `name:` exists in the same store.
+**Check 3 — Wiki-link resolution.** For each `[[target]]` in a memory body, try to resolve it against **both** the `name:` frontmatter **and** the filename stem of every file in the store, after normalizing whitespace, hyphens and underscores to a single form (`Reykvc Security Findings`, `reykvc_security_findings` and `reykvc-security-findings` are the same target).
 
-Broken links are **warnings, not errors** — the convention is that an unresolved link marks a memory worth writing later. The user decides which are markers and which are typos.
+Matching `name:` alone is wrong and inflates the count badly. On a 311-memory fleet it reported 52 broken links; resolving against filenames too, and normalizing separators, brought that to **5**. The gap is entirely the underscore-filename / kebab-`name:` split that Check 2 already declines to treat as an error — follow the consequence through here.
+
+Before calling the remainder broken, check two more things:
+
+- **Is the target a skill rather than a memory?** `[[wp-prod-ssh-ops]]`, `[[release-plugin]]`, `[[update-config]]` are skill names. Report these separately as "points at a skill, not a memory" — the link is meaningful to a reader, it just isn't a memory reference, and rewriting it as plain text is the fix if the user wants one.
+- **Does it live in another store?** Auto-memory is one store per repo, and a link can name a memory that exists in a different project's store or in the legacy `~/.claude/memory/`. Say so rather than calling it broken.
+
+What survives all of that is **a warning, never an error** — the convention is that an unresolved link marks a memory worth writing later. The user decides which are markers and which are typos.
 
 **Check 4 — Index ↔ filesystem consistency.** Parse `MEMORY.md` for every `[Title](file.md)` link.
 
