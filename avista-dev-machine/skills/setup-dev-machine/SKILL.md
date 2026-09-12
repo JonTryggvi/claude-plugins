@@ -86,7 +86,10 @@ Install logic (idempotent):
 
 - If `~/.zsh/` doesn't exist: create it and copy the three module files in.
 - If a module already exists: back it up, then add only the functions it's missing (grep for
-  `set_gh_user`, `new_ssh_key`, etc. before appending). Don't duplicate.
+  `set_gh_user`, `new_ssh_key`, `gh()`, etc. before appending). Don't duplicate.
+- **An existing `git.zsh` that has `set_gh_user` but no `gh()` wrapper is the common half-configured
+  case** — the account is corrected inside `gsend` but not on a direct `gh` call. Add the wrapper and
+  `_gh_active_user`, and replace any `gh api user --jq .login` probe with the local `hosts.yml` read.
 - If `~/.zprofile` / `~/.zshrc` exist: back up, then ensure the "source all `~/.zsh/*.zsh`" loop is present
   (grep for it). Don't replace their file — just add the missing loop if absent.
 - If they're fresh: copy the templates straight in.
@@ -140,8 +143,10 @@ Choose **"Paste an authentication token"** and paste a **classic** token.
 > `github_pat_` it's the fine-grained kind — it often can't trigger release builds (causes `403` errors),
 > so make a classic one instead.
 
-Do this for both the personal and the Avista account; `gh auth switch --user <name>` flips between them
-(the `set_gh_user` helper does this automatically per project).
+Do this for both the personal and the Avista account; `gh auth switch --user <name>` flips between them.
+The `gh()` wrapper in `git.zsh` does it for you on every `gh` call, picking the account from the repo's
+remote — `gh` keeps only **one** active account per host, so without that it silently follows you from
+repo to repo.
 
 ## Part E — Git identity
 
@@ -159,11 +164,17 @@ git config --global user.email "<personal email>"
 In an Avista project folder:
 
 ```
-set_gh_user                    # should say: switched to <avista-username>
-gh api user --jq .login        # should print <avista-username>
-git remote -v                  # should show a github.com-avista (or Avista) address
-ssh -T git@github.com-avista   # should greet <avista-username>
+gh auth switch --user <personal-username>   # deliberately set the WRONG account
+gh repo view --json nameWithOwner           # wrapper should correct it, then succeed
+_gh_active_user                             # should print <avista-username>
+git remote -v                               # should show a github.com-avista (or Avista) address
+ssh -T git@github.com-avista                # should greet <avista-username>
 ```
+
+Forcing the wrong account first is the point: `set_gh_user` alone proves the mapping, but only a bare
+`gh` call proves the wrapper is wired in. Note that `git push` would have succeeded either way — SSH
+resolves through the host alias independently of `gh`, which is why a wrong account surfaces later as
+`GraphQL: Could not resolve to a Repository` rather than as a push failure.
 
 In a personal project folder, the same checks should land on the personal account. Report each result in
 plain language ("✅ your Avista account is connected and working"). If `gh auth switch` says the account
@@ -183,8 +194,9 @@ isn't logged in, go back to **Part D** for that account.
 
 - `references/zprofile.template`, `references/zshrc.template` — shell startup files.
 - `references/zsh/env.zsh` — Homebrew/nvm/locale on the PATH.
-- `references/zsh/git.zsh` — the team git toolkit (`gsend`, `set_git_user`, `set_gh_user`, the Avista
-  `git()` URL auto-correct, PR helpers). Identity placeholders to substitute before install.
+- `references/zsh/git.zsh` — the team git toolkit (`gsend`, `set_git_user`, `set_gh_user`, the
+  `gh()` account auto-switch, the Avista `git()` URL auto-correct, PR helpers). Identity placeholders
+  to substitute before install.
 - `references/zsh/ssh.zsh` — `new_ssh_key` plus keychain/clipboard helpers.
 
 ## Downstream

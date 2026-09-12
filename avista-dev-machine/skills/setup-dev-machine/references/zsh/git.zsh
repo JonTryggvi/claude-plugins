@@ -67,11 +67,34 @@ set_git_user() {
 }
 
 # Switches the active `gh` CLI account to match the current repo's remote, so
-# `gh release create` / API calls hit the account that owns the repo.
+# `gh release create` / `gh pr create` / API calls hit the account that owns
+# the repo.
+#
+# Why this is needed at all: gh keeps ONE active account per host, and both
+# Avista accounts live on github.com — so whichever you last switched to
+# follows you into every repo on the machine. Only the remote URL says which
+# account a repo actually needs.
+#
+# Why the failure is hard to read: SSH resolves through the github.com-avista
+# host alias independently of gh, so `git push` SUCCEEDS on the wrong account.
+# The next command is what fails, with "GraphQL: Could not resolve to a
+# Repository with the name 'Avista/…'" — which reads like a deleted or renamed
+# repo rather than a wrong login.
+
+# Active github.com account, read from gh's own config file.
+# `gh api user --jq .login` is authoritative but costs a network round-trip
+# (~700ms measured), far too expensive to pay on every gh invocation.
+_gh_active_user() {
+  awk '
+    /^[^[:space:]#]/                              { host = $1 }
+    host == "github.com:" && /^[[:space:]]+user:/ { print $2; exit }
+  ' "${GH_CONFIG_DIR:-$HOME/.config/gh}/hosts.yml" 2>/dev/null
+}
+
+# Pass "quiet" to suppress the no-mapping warning (the gh() wrapper does).
 set_gh_user() {
-  local repository_base
-  repository_base=$(git config --get remote.origin.url 2>/dev/null) || return 1
-  local target_user=""
+  local repository_base target_user="" current_user
+  repository_base=$(command git config --get remote.origin.url 2>/dev/null) || return 1
   case $repository_base in
     *"github.com"[:/]"__PERSONAL_GH_USER__"*)
       target_user="__PERSONAL_GH_USER__"
@@ -80,17 +103,16 @@ set_gh_user() {
       target_user="__AVISTA_GH_USER__"
       ;;
     *)
-      echo "Warning: No gh account mapping for this remote URL."
+      [[ "$1" == "quiet" ]] || echo "Warning: No gh account mapping for this remote URL."
       return 0
       ;;
   esac
-  local current_user
-  current_user=$(gh api user --jq .login 2>/dev/null)
-  if [[ "$current_user" != "$target_user" ]]; then
-    gh auth switch --user "$target_user" 2>/dev/null \
-      && echo "gh: switched to $target_user" \
-      || echo "Warning: could not switch gh to $target_user"
-  fi
+  current_user=$(_gh_active_user)
+  [[ "$current_user" == "$target_user" ]] && return 0
+  # `command gh`, not `gh` — the wrapper below would recurse.
+  command gh auth switch --user "$target_user" >/dev/null 2>&1 \
+    && echo "gh: switched to $target_user" \
+    || echo "Warning: could not switch gh to $target_user"
 }
 
 # ── Pull request helpers ──────────────────────────────────────────────────────
@@ -263,4 +285,14 @@ git() {
     fi
   done
   command git "${args[@]}"
+}
+
+# ── gh() wrapper — auto-selects the account the repo's remote calls for ──────
+# Without this the correction only happens inside gsend; reach for `gh` by hand
+# and you get whichever account was last active. No-op outside a git repo or in
+# a repo with no mapping. An explicit `gh auth switch` still wins — it runs
+# after the correction.
+gh() {
+  set_gh_user quiet
+  command gh "$@"
 }

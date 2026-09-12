@@ -85,11 +85,27 @@ fi
 # Team functions — grep the modules; a live `type` check needs an interactive shell.
 if [ -f "$HOME/.zsh/git.zsh" ] || [ -f "$HOME/.zsh/ssh.zsh" ]; then
   missing_fn=""
-  for fn in gsend set_git_user set_gh_user new_ssh_key; do
+  for fn in gsend set_git_user set_gh_user new_ssh_key gh; do
     grep -qs "^${fn}()\|^${fn} ()\|^function ${fn}" "$HOME/.zsh/"*.zsh || missing_fn="$missing_fn $fn"
   done
-  if [ -z "$missing_fn" ]; then ok "team functions" "gsend set_git_user set_gh_user new_ssh_key"
+  if [ -z "$missing_fn" ]; then ok "team functions" "gsend set_git_user set_gh_user new_ssh_key gh"
   else warn "team functions" "missing:$missing_fn"; gap "team functions ($missing_fn)" "setup-dev-machine (Part B)"; fi
+
+  # Older git.zsh installs have set_gh_user but no gh() wrapper, so the account
+  # is only corrected inside gsend — a direct `gh pr create` still runs as
+  # whichever account was last active. They also probe the account over the
+  # network (~700ms) instead of reading gh's own hosts.yml.
+  if grep -qs "^set_gh_user()" "$HOME/.zsh/"*.zsh; then
+    if ! grep -qs "^gh()" "$HOME/.zsh/"*.zsh; then
+      warn "gh account auto-switch" "set_gh_user present but no gh() wrapper — only gsend corrects the account"
+      gap "gh() wrapper missing (direct gh calls use the last-active account)" "setup-dev-machine (Part B) — reinstall git.zsh"
+    elif grep -qs "gh api user --jq .login" "$HOME/.zsh/"*.zsh; then
+      warn "gh account auto-switch" "wrapper present but probing the account over the network on every gh call"
+      gap "set_gh_user uses 'gh api user' instead of hosts.yml" "setup-dev-machine (Part B) — reinstall git.zsh"
+    else
+      ok "gh account auto-switch" "gh() wrapper + local hosts.yml lookup"
+    fi
+  fi
 fi
 
 # ~/.local/bin on PATH — the native-installer gap.

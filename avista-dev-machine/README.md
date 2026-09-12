@@ -8,7 +8,7 @@ code the way the rest of the team does.
 | Skill | What it does |
 |---|---|
 | `dev-machine-doctor` | **Read-only** scan — base tooling, shell config, `gh` accounts + token scopes, SSH reachability, agent layer, role tooling — routing each gap to the skill that fixes it. Changes nothing. |
-| `setup-dev-machine` | Base tooling (Xcode CLT/git, Homebrew, `gh`), shell config (`~/.zprofile` + `~/.zshrc` + `~/.zsh` modules with `gsend`, `set_gh_user`, `new_ssh_key`), SSH keys per GitHub account, `gh` multi-account auth, per-project git identity. |
+| `setup-dev-machine` | Base tooling (Xcode CLT/git, Homebrew, `gh`), shell config (`~/.zprofile` + `~/.zshrc` + `~/.zsh` modules with `gsend`, `set_gh_user`, `new_ssh_key`, a `gh()` account-switching wrapper), SSH keys per GitHub account, `gh` multi-account auth, per-project git identity and `gh` account. |
 | `setup-agent-toolkit` | Claude Code on PATH, the Avista marketplace + plugins, the shared `~/.claude/CLAUDE.md` house rules, the `~/.claude/.env` token store, and the Figma MCP choice. |
 | `setup-wp-toolchain` | PHP 8 + WordPress-required extensions, Composer, PHPUnit, wp-cli, Node via nvm, Local by Flywheel / Docker + mkcert, and the `weasyprint`+`poppler` render pair. **By role.** |
 | `setup-site-access` | SSH to WPMU DEV client sites — the 1Password SSH agent, per-site `Host` blocks, read-only reachability check. **By role.** |
