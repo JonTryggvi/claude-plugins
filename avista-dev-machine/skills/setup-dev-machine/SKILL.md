@@ -77,6 +77,7 @@ This skill bundles templates in `references/`:
 - `references/zprofile.template` → `~/.zprofile`
 - `references/zshrc.template` → `~/.zshrc`
 - `references/zsh/env.zsh`, `references/zsh/git.zsh`, `references/zsh/ssh.zsh` → `~/.zsh/`
+- `references/gitconfig-avista` → `~/.gitconfig-avista`
 
 **Before writing the team toolkit (`zsh/git.zsh`), substitute the identity placeholders** with the Part 0
 values: `__FULL_NAME__`, `__PERSONAL_EMAIL__`, `__AVISTA_EMAIL__`, `__PERSONAL_GH_USER__`,
@@ -93,6 +94,13 @@ Install logic (idempotent):
 - If `~/.zprofile` / `~/.zshrc` exist: back up, then ensure the "source all `~/.zsh/*.zsh`" loop is present
   (grep for it). Don't replace their file — just add the missing loop if absent.
 - If they're fresh: copy the templates straight in.
+- Copy `gitconfig-avista` to `~/.gitconfig-avista` if absent. It routes `git@github.com:Avista/*` over
+  the `github.com-avista` alias at connection time, so remotes stay canonical. Opt each Avista repo in
+  with `git config --local include.path '~/.gitconfig-avista'` — per-repo, never global, or personal
+  remotes get pushed onto the Avista key. Earlier setups did this with a `git()` shell wrapper that
+  rewrote the URL before git saw it; that stored `github.com-avista` in `.git/config`, and tools which
+  parse the host out of a remote then refused to send a token and got `NOT_FOUND` on private repos. If
+  you find that wrapper in an existing `git.zsh`, remove it.
 
 Then have them open a new Terminal (or `source ~/.zprofile`) so the helpers load. Verify with
 `type gsend` — it should report `gsend is a shell function`.
@@ -167,7 +175,7 @@ In an Avista project folder:
 gh auth switch --user <personal-username>   # deliberately set the WRONG account
 gh repo view --json nameWithOwner           # wrapper should correct it, then succeed
 _gh_active_user                             # should print <avista-username>
-git remote -v                               # should show a github.com-avista (or Avista) address
+git remote -v                               # should show a canonical github.com/Avista address
 ssh -T git@github.com-avista                # should greet <avista-username>
 ```
 

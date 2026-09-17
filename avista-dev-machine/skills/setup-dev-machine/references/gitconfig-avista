@@ -1,0 +1,10 @@
+# Routes github.com URLs over the github.com-avista SSH alias (Avista org key).
+# Remotes stay canonical so tools that parse the host — the Claude desktop
+# app's GitHub client among them — still recognise github.com and send a token.
+# Include per-repo, never globally:
+#
+#   git config --local include.path '~/.gitconfig-avista'
+#
+# A global include would drag personal remotes onto the Avista key too.
+[url "git@github.com-avista:"]
+	insteadOf = git@github.com:

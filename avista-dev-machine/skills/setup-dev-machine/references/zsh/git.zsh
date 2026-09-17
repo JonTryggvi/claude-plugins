@@ -264,28 +264,24 @@ gdown(){
   git checkout -b "$branchname"
 }
 
-# ── git() wrapper — auto-corrects Avista remote URLs ─────────────────────────
-# Rewrites git@github.com:Avista/… to git@github.com-avista:Avista/… so clones
-# and remote-adds use the Avista SSH identity without you having to remember.
-git() {
-  local args=("$@")
-  local i original_url repo_path new_url
-  for (( i=1; i<=${#args[@]}; i++ )); do
-    if [[ "${args[i]}" == "git@github.com:Avista/"* ]] || [[ "${args[i]}" == "git@github.com:avista/"* ]]; then
-      original_url="${args[i]}"
-      repo_path="${original_url#*:}"
-      new_url="git@github.com-avista:${repo_path}"
-      args[i]=$new_url
-      echo "---"
-      echo "Auto-correcting Avista remote URL:"
-      echo "From: $original_url"
-      echo "To:   ${args[i]}"
-      echo "---"
-      break
-    fi
-  done
-  command git "${args[@]}"
-}
+# ── Avista remote routing ────────────────────────────────────────────────────
+# Routing belongs in git config, not in a git() wrapper. A wrapper rewrote the
+# ARGUMENTS, so github.com-avista was what got stored in .git/config — and any
+# tool that parses the host out of a remote URL then saw an unknown host,
+# declined to attach a token, and got NOT_FOUND on private repos.
+#
+# url.insteadOf rewrites at connection time and leaves the stored URL canonical.
+# Install ~/.gitconfig-avista:
+#
+#   [url "git@github.com-avista:"]
+#       insteadOf = git@github.com:
+#
+# and opt each Avista repo in:
+#
+#   git config --local include.path '~/.gitconfig-avista'
+#
+# Per-repo, never global — a global rewrite would drag personal remotes onto
+# the Avista key too.
 
 # ── gh() wrapper — auto-selects the account the repo's remote calls for ──────
 # Without this the correction only happens inside gsend; reach for `gh` by hand
