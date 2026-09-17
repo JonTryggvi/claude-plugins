@@ -90,7 +90,7 @@ Install logic (idempotent):
   `set_gh_user`, `new_ssh_key`, `gh()`, etc. before appending). Don't duplicate.
 - **An existing `git.zsh` that has `set_gh_user` but no `gh()` wrapper is the common half-configured
   case** — the account is corrected inside `gsend` but not on a direct `gh` call. Add the wrapper and
-  `_gh_active_user`, and replace any `gh api user --jq .login` probe with the local `hosts.yml` read.
+  `gh_active_user`, and replace any `gh api user --jq .login` probe with the local `hosts.yml` read.
 - If `~/.zprofile` / `~/.zshrc` exist: back up, then ensure the "source all `~/.zsh/*.zsh`" loop is present
   (grep for it). Don't replace their file — just add the missing loop if absent.
 - If they're fresh: copy the templates straight in.
@@ -174,7 +174,7 @@ In an Avista project folder:
 ```
 gh auth switch --user <personal-username>   # deliberately set the WRONG account
 gh repo view --json nameWithOwner           # wrapper should correct it, then succeed
-_gh_active_user                             # should print <avista-username>
+gh_active_user                             # should print <avista-username>
 git remote -v                               # should show a canonical github.com/Avista address
 ssh -T git@github.com-avista                # should greet <avista-username>
 ```

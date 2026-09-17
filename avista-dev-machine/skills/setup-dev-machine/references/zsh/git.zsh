@@ -84,7 +84,10 @@ set_git_user() {
 # Active github.com account, read from gh's own config file.
 # `gh api user --jq .login` is authoritative but costs a network round-trip
 # (~700ms measured), far too expensive to pay on every gh invocation.
-_gh_active_user() {
+# No leading underscore: Claude Code's shell snapshots drop single-underscore
+# functions (zsh's completion-function convention), so `_gh_active_user` was
+# missing inside Claude Code and every gh call errored and re-switched account.
+gh_active_user() {
   awk '
     /^[^[:space:]#]/                              { host = $1 }
     host == "github.com:" && /^[[:space:]]+user:/ { print $2; exit }
@@ -107,7 +110,7 @@ set_gh_user() {
       return 0
       ;;
   esac
-  current_user=$(_gh_active_user)
+  current_user=$(gh_active_user)
   [[ "$current_user" == "$target_user" ]] && return 0
   # `command gh`, not `gh` — the wrapper below would recurse.
   command gh auth switch --user "$target_user" >/dev/null 2>&1 \
@@ -174,7 +177,7 @@ gsend() {
   fi
 
   if [[ "$branch" == claude/* ]]; then
-    _gsend_merge_claude "$branch"
+    gsend_merge_claude "$branch"
     return $?
   fi
 
@@ -185,7 +188,7 @@ gsend() {
 }
 
 # Internal helper — squash-merges a claude/* branch into the default branch.
-_gsend_merge_claude() {
+gsend_merge_claude() {
   local claude_branch="$1"
   local current_wt main_wt default_branch in_worktree=0 stashed=0
 
