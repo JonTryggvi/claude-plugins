@@ -51,19 +51,19 @@ bash "<this-skill-dir>/scripts/resolve-window.sh" period
 
 `yesterday` and `week` are calendar arithmetic and need no confirmation. **`period` does.**
 
-### Why `period` is not arithmetic
+### Why `period` is half arithmetic
 
-The nominal billing boundary is the 19th, moved to the next working day when it lands on a weekend. That
-rule does not reproduce the periods actually worked: **2026-07-21..2026-08-21 ran 21st-to-21st** even
-though 19 Jul was a Sunday (rule says the 20th) and 19 Aug was a Wednesday (rule says the 19th). The
-boundary slips because the period is cut when someone gets to it.
+**The billing period runs from the 20th of one month to the 20th of the next** (`AC_PERIOD_DAY`, default
+20). The two ends are still resolved differently, and the script labels which is which in `provenance`:
 
-So the two ends are resolved differently, and the script labels which is which in `provenance`:
-
-- **START is not a proposal.** It is the day after the previous period ended, read from the run log. That
-  is the only thing guaranteeing consecutive periods neither overlap nor gap. If no prior period run
-  exists the start is marked `inferred` — say so out loud, because an inferred boundary two days off looks
-  exactly like a correct one.
+- **START is arithmetic and not a proposal.** It is the ${AC_PERIOD_DAY}th of last month, full stop.
+  It used to be the day after the previous period ended, read from the run log — that drifted, because
+  every short or patched period moved the next boundary with it. The 2026-09-01..09-13 patch run left
+  **2026-08-22..08-31 covered by no period run at all**, and the next resolve then proposed a start of
+  2026-09-14, burying the hole instead of reporting it. The run log is now a *check* on the boundary, not
+  the source of it: the script emits a `GAP:` note when the previous period stopped short of it and an
+  `OVERLAP:` note when the previous period ran past it. **Read those notes** — an OVERLAP means some
+  dates in the window already carry posted, possibly invoiced records.
 - **END is only ever a proposal.** Put `end_alternatives` to the user as a **selection list**
   (`AskUserQuestion`), recommended first, with each option's reasoning as its description:
 
