@@ -1,0 +1,20 @@
+{
+  "name": "avista-wp-fleet",
+  "version": "0.1.0",
+  "description": "Manage Avista's WPMU DEV sites as one fleet. fleet-setup runs a read-only API key test that finds out what the WPMU DEV Hub key can actually reach (the documented /sites list 502s for some keys, so the test decides API mode vs SSH mode rather than trusting the spec), reads the customer ↔ site links the Avista CRM already holds, maps which sites are reachable over SSH by asking each one its home URL, and joins it all into one local site map. The key is account-wide with no scopes, so it is never echoed, pasted into chat or passed as a process argument. Inventory, staged rollouts of our own plugins, and drift reports build on the map.",
+  "author": {
+    "name": "Avista",
+    "url": "https://avista.is"
+  },
+  "homepage": "https://avista.is",
+  "keywords": [
+    "wordpress",
+    "wpmudev",
+    "fleet",
+    "multisite-management",
+    "rollout",
+    "crm",
+    "ssh",
+    "avista"
+  ]
+}

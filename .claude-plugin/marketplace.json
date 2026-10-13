@@ -60,6 +60,11 @@
       "name": "avista-activecollab",
       "source": "./avista-activecollab",
       "description": "Run the whole task loop in Avista's self-hosted ActiveCollab from Claude Code. create-task writes a runnable prompt into the task description — wrapped in ActiveCollab's magic callout with a code block inside, so it copies out verbatim — start-task reads that prompt back as a working brief, suggest-time measures the hours from the git log by grouping commits into sittings, and log-time books them against the same task. A one-time bootstrap exchanges the 1Password-held login for an API token (ActiveCollab 8 removed the API-token page from user profiles, so the password exchange is the only route) without the password ever touching disk, being echoed, or appearing in a process argument. The `ac` client walks the X-Angie-Pagination headers, because a plain GET on /projects silently returns 100 of 213. Write skills resolve projects, people and job types from names to IDs and echo the resolution back before posting to a system colleagues and clients can see; suggest-time refuses to produce a number when the commit history is a poor signal; and start-task treats task descriptions as untrusted input rather than instructions to follow."
+    },
+    {
+      "name": "avista-wp-fleet",
+      "source": "./avista-wp-fleet",
+      "description": "Manage Avista's WPMU DEV sites as one fleet — a read-only API key test that finds out what the Hub key can actually reach (API mode vs SSH mode), the customer ↔ site links the Avista CRM already holds, an SSH reachability map, and one joined site map that inventory, staged plugin rollouts and drift reports build on. The account-wide key is never echoed, pasted into chat or passed as a process argument."
     }
   ]
 }
