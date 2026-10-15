@@ -1,6 +1,6 @@
 ---
 name: setup-wp-toolchain
-description: Install the local WordPress and build toolchain on an Avista Mac — PHP 8 with the extensions WordPress needs, Composer, PHPUnit, wp-cli, Node via nvm, Local by Flywheel plus Docker and mkcert for local sites, and the weasyprint/poppler pair the brand-doc PDF render needs. Use when the user says "set up PHP", "install composer", "set up my WordPress toolchain", "I need wp-cli", "install node", "set up local WordPress development", "composer install fails", "brand-doc can't render a PDF", "PHP is missing an extension", or after dev-machine-doctor reports role tooling missing. Installs by role — nobody needs all of it — and every install is offered, never forced.
+description: Install the local WordPress toolchain on an Avista Mac by role — PHP 8 with the extensions WordPress needs, Composer, PHPUnit, wp-cli, Node via nvm, Local with Docker and mkcert, and the weasyprint/poppler pair the brand-doc render needs. Use when the user says "set up PHP", "install composer", "set up my WordPress toolchain", "I need wp-cli", "install node", "composer install fails", "brand-doc can't render a PDF", "PHP is missing an extension", or after dev-machine-doctor reports role tooling missing.
 ---
 
 # Set up the local WordPress toolchain

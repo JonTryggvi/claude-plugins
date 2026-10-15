@@ -1,6 +1,6 @@
 ---
 name: activecollab-invoice-preflight
-description: Check one client's period before it is invoiced — what is logged, how much is billable but not yet on an invoice, and which dates have commits with no time record — so billing day is a check rather than archaeology. Use when the user says "check before I invoice", "invoice preflight", "is this client ready to bill", "what can I invoice for <client> this month", "anything unlogged before I send the invoice", "how many billable hours for <client> in July", "are we about to under-bill", or is closing a month for a specific client. Read-only. It also reports what it could NOT verify — the invoice list is unreadable through the API, and non-commit work is invisible to it — because a preflight that hides its blind spots is worse than none.
+description: Check one client's period before invoicing — what is logged, what is billable but not yet invoiced, and which dates have commits but no time record — and say plainly what it could not verify. Use when the user says "check before I invoice", "invoice preflight", "is this client ready to bill", "what can I invoice for [client] this month", "anything unlogged before I send the invoice", "are we about to under-bill", or is closing a month for one client. Read-only.
 ---
 
 # Invoice preflight, per client

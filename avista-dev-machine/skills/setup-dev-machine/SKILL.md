@@ -1,6 +1,6 @@
 ---
 name: setup-dev-machine
-description: Set up a new Avista developer's Mac end-to-end — base tooling (Homebrew, gh, git), a working shell config (~/.zprofile + ~/.zshrc + ~/.zsh modules with the team functions), SSH keys wired to the right GitHub account, gh multi-account auth, and git identity. A plain-language, hand-holding guide for teammates who aren't comfortable with git or SSH. Use when the user says "set up my computer for work", "set up my new Mac", "onboard my machine", "set up git and GitHub", "set up ssh", "configure my zprofile", "I can't push to GitHub", "fix gh 403 on release", or when a release skill fails because git/gh is on the wrong account.
+description: Set up a new Avista developer's Mac step by step — Homebrew, git and gh, a working shell config, SSH keys tied to the right GitHub account, gh multi-account auth and git identity, explained for teammates new to git and SSH. Use when the user says "set up my computer for work", "set up my new Mac", "onboard my machine", "set up git and GitHub", "set up ssh", "I can't push to GitHub", "fix gh 403 on release", or a release skill fails because git or gh is on the wrong account.
 ---
 
 # Set up an Avista developer's Mac

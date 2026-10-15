@@ -1,6 +1,6 @@
 ---
 name: dev-machine-doctor
-description: Read-only health check for an Avista Mac — reports what's installed vs missing across base tooling, shell config, GitHub identity (gh accounts, token scopes, SSH reachability), the agent layer (Claude Code, house rules, token store, plugins), and role tooling, then names the skill that fixes each gap. Use when the user says "check my machine", "is my setup right", "what's missing on this Mac", "why can't I push", "why did the release 403", "diagnose my dev setup", "the skill can't find my token", "audit my machine setup", or before onboarding help so you know what actually needs doing. Start HERE — it changes nothing, installs nothing, and tells you which setup skill to run. Never prints a token value.
+description: Read-only health check for an Avista Mac — base tooling, shell config, GitHub identity and SSH, the agent layer and role tooling — naming the skill that fixes each gap. Use when the user says "check my machine", "is my setup right", "what's missing on this Mac", "why can't I push", "why did the release 403", "diagnose my dev setup", "the skill can't find my token", or before onboarding help. Start here; it changes nothing.
 ---
 
 # Dev-machine doctor

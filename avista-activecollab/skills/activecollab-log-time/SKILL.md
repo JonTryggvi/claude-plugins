@@ -1,6 +1,6 @@
 ---
 name: activecollab-log-time
-description: Log tracked hours against an ActiveCollab task or project — resolves the project, task, job type and person from names to IDs, pre-flights the project's budget_type so a billable_status that will be silently coerced to 0 is reported BEFORE posting, then posts only after showing exactly what will be written and diffs the stored record against what was sent so any field the platform overrode is reported rather than assumed. Use when the user says "log time in ActiveCollab", "log 2 hours on that task", "track my time", "book hours to <project>", "add a time record", "I spent 3 hours on X", "put that on the timesheet", or wants to correct or delete a record they already logged. Time records feed reporting and invoicing, so this never posts without explicit approval and never invents a duration the user did not state. For reading hours back — per task, project, person or company over a date window — use activecollab-time-audit.
+description: Log hours against an ActiveCollab task or project — resolves project, task, job type and person from names, checks before posting whether the project will silently zero the billable flag, and reads the stored record back to catch overridden fields. Use when the user says "log time in ActiveCollab", "log 2 hours on that task", "track my time", "book hours to [project]", "I spent 3 hours on X", "put that on the timesheet", or wants to correct or delete a logged record. To read hours back, use activecollab-time-audit.
 ---
 
 # Log time to ActiveCollab

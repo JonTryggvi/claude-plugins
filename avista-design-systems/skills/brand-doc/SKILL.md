@@ -1,6 +1,6 @@
 ---
 name: brand-doc
-description: Brand a document or client report in one of the org's Claude Design design systems and render it to a polished PDF. Use when the user says "brand this", "make a branded PDF/report", "apply the <X> design system", "style this like <brand>", "turn these notes into a client-facing report", or wants a client-ready document in a house style. Can list available design systems — including read-only ones that DesignSync's list_projects hides — and let the user pick. Also use when a draft, audit, or set of notes needs to leave the building looking like it came from the org.
+description: Brand a document or client report in one of the org's Claude Design design systems and render it to a polished PDF. Use when the user says "brand this", "make a branded PDF/report", "apply the [X] design system", "style this like [brand]", "turn these notes into a client-facing report", or wants a client-ready document in a house style. Can list available design systems — including read-only ones that DesignSync's list_projects hides — and let the user pick. Also use when a draft, audit, or set of notes needs to leave the building looking like it came from the org.
 ---
 
 # Brand a document in a Claude Design system

@@ -1,6 +1,6 @@
 ---
 name: memory-health-check
-description: "Lint a Claude Code auto-memory store. Checks the MEMORY.md index against its 200-line/25KB load budget, validates frontmatter, resolves wiki-links between memory files, finds entries gone stale by their modified timestamp, flags oversized topic files, detects duplicates and orphans, and scans for sensitive content and instruction-like text that should never have been saved. Use when the user says check memory health, audit memory, lint my memory, review the memory store, find stale memories, is anything broken in memory, what has Claude saved about me, or as a monthly maintenance ritual. Reports findings grouped by severity first; applies fixes only with explicit per-category approval. Companion to the consolidate-memory skill, which is a deeper quarterly reflective pass; this skill is the lightweight monthly linter."
+description: Lint a Claude Code auto-memory store — the MEMORY.md load budget, frontmatter, wiki-links, stale and oversized entries, duplicates, orphans, and sensitive or instruction-like content that should never have been saved. Use when the user says check memory health, audit memory, lint my memory, find stale memories, is anything broken in memory, what has Claude saved about me, or as a monthly check. Fixes only with per-category approval. For the deeper quarterly pass, use consolidate-memory.
 ---
 
 # Lint the auto-memory store

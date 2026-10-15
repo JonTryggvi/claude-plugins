@@ -1,6 +1,6 @@
 ---
 name: chunk-large-algolia-records
-description: Keep WordPress + Algolia records within Algolia's limits when a document is large — diagnose oversized or silently-rejected records, route long text through the chunked `content` path of wp-search-with-algolia (which splits via Algolia_Utils::explode_content into {post_id}-{i} records collapsed by `distinct`), keep small fields as shared attributes, and for non-plugin or custom-attribute cases deploy a standalone word-boundary chunker. Use when the user says an Algolia record is "too big", "over 100KB", "rejected", "a post is missing from search", "index a long PDF in Algolia", "split large records", "chunk content for Algolia", or "distinct / multiple records per document". Do not use for ordinary relevance tuning, synonyms, or facet config that has nothing to do with record size.
+description: Keep WordPress + Algolia records under Algolia's size limits — diagnose oversized or silently rejected records, route long text through the chunked content path of wp-search-with-algolia, keep small fields as shared attributes, or deploy a standalone chunker for custom attributes. Use when the user says an Algolia record is "too big", "over 100KB", "rejected", "a post is missing from search", "index a long PDF in Algolia", "split large records" or "chunk content for Algolia". Not for relevance tuning, synonyms or facets.
 ---
 
 # Chunk large records for Algolia (WordPress)

@@ -1,6 +1,6 @@
 ---
 name: fleet-setup
-description: Set up fleet management for Avista's WPMU DEV sites — reads the WPMU DEV Hub API key from 1Password (Shared vault), runs a read-only API key test to find out what that key can actually reach (site list, hosting details, per-site plugins), reads the customer ↔ site links out of the Avista CRM (crm.avista.is), maps which sites are reachable over SSH, and joins it all into one local site map that the other fleet skills read. Use when the user says "set up fleet", "set up the WPMU DEV API", "test the WPMU DEV key", "which sites belong to which customer", "build the site map", "how many of our sites can we reach", "connect the CRM to WPMU DEV", or before any other avista-wp-fleet skill when ~/.claude/avista-wp-fleet/sites.json is missing or older than a week. Read-only end to end — nothing is written to WPMU DEV, the CRM, or any site.
+description: Set up fleet management for Avista's WPMU DEV sites — tests what the Hub API key can reach, reads the customer-to-site links from the Avista CRM, maps which sites answer over SSH, and joins it all into the local site map the other fleet skills read. Use when the user says "set up fleet", "test the WPMU DEV key", "which sites belong to which customer", "build the site map", "how many of our sites can we reach", or when ~/.claude/avista-wp-fleet/sites.json is missing or over a week old. Read-only end to end.
 ---
 
 # Fleet setup

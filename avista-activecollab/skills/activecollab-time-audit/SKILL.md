@@ -1,6 +1,6 @@
 ---
 name: activecollab-time-audit
-description: Read logged time back out of ActiveCollab — for a task, a project, a person, or the whole company over a date window — and compare it against hours measured from the git log to see whether work is being under-logged. Use when the user says "how much time is logged on this project", "what's been logged on that task", "read the time records", "show me the timesheet", "are we under-logging", "compare logged time to actual time spent", "do our logged hours match the work", "time audit", "how many hours went to <project> last month", "who logged what", or wants to know whether hours actually worked are reaching the timesheet. Read-only — it never creates, edits or deletes a time record. The logged-vs-measured ratio describes logging discipline on commit-producing work, never a person's productivity.
+description: Read logged time back out of ActiveCollab — for a task, project, person or the whole company over a date window — and compare it with hours measured from git to spot under-logging. Use when the user says "how much time is logged on this project", "show me the timesheet", "are we under-logging", "compare logged time to actual time", "time audit", "how many hours went to [project] last month", or "who logged what". Read-only.
 ---
 
 # Audit logged time in ActiveCollab

@@ -1,6 +1,6 @@
 ---
 name: activecollab-suggest-time
-description: Suggest timesheet entries after finishing a feature — measures working time from the git log by grouping commits into sittings, finds candidate ActiveCollab tasks from the branch name, commit messages and repo, and proposes one time record per sitting for the user to confirm. Creates a record-mode task to hang the hours on when no existing task matches. Use when the user says "I finished this feature, log the time", "suggest time entries", "how long did this take", "what should I log for this", "find the task for this work", "estimate hours from git", or wraps up a piece of work and needs it on a timesheet. Measures rather than prices, states its basis, and refuses to guess when the commit history is a poor signal.
+description: Suggest timesheet entries after finishing a feature — groups the git log into sittings, finds the matching ActiveCollab task from the branch, commits and repo, and proposes one time record per sitting to confirm, creating a task to log against when none matches. Use when the user says "I finished this feature, log the time", "suggest time entries", "how long did this take", "what should I log for this", "estimate hours from git", or wraps up a piece of work. Refuses to guess when the commit history is a poor signal.
 ---
 
 # Suggest time entries from git

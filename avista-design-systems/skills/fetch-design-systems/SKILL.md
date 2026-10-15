@@ -1,6 +1,6 @@
 ---
 name: fetch-design-systems
-description: List the Claude Design design systems this login can reach, and resolve any that don't enumerate. Use when the user asks "what design systems do I have", "list our design systems", "which brands can I use", "is the <X> design system available", "why can't you see <X> design system", when they paste a claude.ai/design share link, or whenever another skill needs a design system picked before it can proceed.
+description: List the Claude Design design systems this login can reach, and resolve any that don't enumerate. Use when the user asks "what design systems do I have", "list our design systems", "which brands can I use", "is the [X] design system available", "why can't you see [X] design system", when they paste a claude.ai/design share link, or whenever another skill needs a design system picked before it can proceed.
 ---
 
 # Fetch Claude Design systems

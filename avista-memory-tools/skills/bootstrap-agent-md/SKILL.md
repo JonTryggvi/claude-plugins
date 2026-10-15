@@ -1,6 +1,6 @@
 ---
 name: bootstrap-agent-md
-description: "Generate a project-local CLAUDE.md from the project's source — surveys structure, reads README and package manifests, scans recent commits, detects the project type, and proposes a CLAUDE.md covering architecture, conventions, workflows, and gotchas specific to that codebase, splitting anything that only applies to part of the tree into path-scoped .claude/rules/ files. Use when the user says bootstrap CLAUDE.md, scaffold a CLAUDE.md, generate a project CLAUDE.md, this project needs a CLAUDE.md, set up CLAUDE.md for this repo, init agent-md, create CLAUDE.md from this project's source, or when joining an existing project that has no CLAUDE.md yet. Targets project-local CLAUDE.md files and .claude/rules/ — do not use to write the global ~/.claude/CLAUDE.md (that file is curated by hand, not generated). Pairs with agent-md-audit: bootstrap creates, audit prunes."
+description: Generate a project-local CLAUDE.md from the project's source — surveys structure, README, manifests and recent commits, then proposes architecture, conventions, workflows and gotchas, with part-of-tree rules split into .claude/rules/ files. Use when the user says bootstrap CLAUDE.md, scaffold a CLAUDE.md, generate a project CLAUDE.md, this project needs a CLAUDE.md, init agent-md, or joins a project that has none. Not for the global ~/.claude/CLAUDE.md, which is curated by hand. agent-md-audit prunes what this creates.
 ---
 
 # Bootstrap a project's CLAUDE.md

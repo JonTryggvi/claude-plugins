@@ -1,6 +1,6 @@
 ---
 name: setup-agent-toolkit
-description: Set up the agent layer on an Avista Mac — Claude Code on PATH, the Avista org marketplace and its plugins, the shared global instruction file (~/.claude/CLAUDE.md), and the ~/.claude/.env token store that avista-figma-import, avista-activecollab and the release skills read. Use when the user says "set up my Claude tooling", "install the Avista plugins", "the Avista skills aren't showing up", "set up my tokens", "where does FIGMA_TOKEN go", "add my Figma token", "the figma-import skill can't find a token", "set up the global CLAUDE.md", "my new Mac has no plugins", or after setup-dev-machine when the machine has git and gh but no agent config. Run once per machine. Token values are pasted by the user and are never echoed, logged, or passed as process arguments.
+description: Set up the agent layer on an Avista Mac — Claude Code on PATH, the Avista org marketplace and plugins, the shared ~/.claude/CLAUDE.md, and the ~/.claude/.env token store other Avista skills read. Use when the user says "set up my Claude tooling", "install the Avista plugins", "the Avista skills aren't showing up", "set up my tokens", "where does FIGMA_TOKEN go", "set up the global CLAUDE.md", "my new Mac has no plugins", or after setup-dev-machine. Run once per machine.
 ---
 
 # Set up the Avista agent toolkit

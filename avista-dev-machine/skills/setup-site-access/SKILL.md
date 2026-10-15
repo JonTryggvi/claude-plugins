@@ -1,6 +1,6 @@
 ---
 name: setup-site-access
-description: Wire up SSH access to Avista client production sites on WPMU DEV hosting — the 1Password SSH agent that serves the keys, per-site Host blocks in ~/.ssh/config, and a read-only reachability check before any production skill runs. Use when the user says "set up site access", "add a site to my ssh config", "I can't ssh into the client site", "set up WPMU DEV ssh", "permission denied publickey on tempurl.host", "set up the 1Password ssh agent", "wp-prod-ops can't connect", or before running avista-wp-prod-ops or avista-wp-performance on a machine that has never reached that site. Credentials come from the WPMU DEV Hub and 1Password; the assistant never handles a password or private key.
+description: Set up SSH access to Avista client sites on WPMU DEV hosting — the 1Password SSH agent, per-site Host blocks in ~/.ssh/config, and a read-only reachability check. Use when the user says "set up site access", "add a site to my ssh config", "I can't ssh into the client site", "permission denied publickey on tempurl.host", "set up the 1Password ssh agent", "wp-prod-ops can't connect", or before avista-wp-prod-ops or avista-wp-performance first reach a site. Never handles a password or private key.
 ---
 
 # Set up production site access

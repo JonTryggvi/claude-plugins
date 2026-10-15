@@ -1,6 +1,6 @@
 ---
 name: activecollab-setup
-description: Set up ActiveCollab API access on an Avista machine — installs the 1Password CLI, walks the user through the desktop-app integration toggle, exchanges their ActiveCollab login for a long-lived API token, writes the token to ~/.claude/.env, and installs the `ac` client. Use when the user says "set up ActiveCollab", "connect me to ActiveCollab", "get an ActiveCollab token", "ActiveCollab isn't authenticated", "ac says not configured", "my ActiveCollab token stopped working", "401 from ActiveCollab", or before any other activecollab-* skill can run. Run this once per machine. The user's password is read directly from 1Password into the token request and is never stored, echoed, or passed as a process argument.
+description: Set up ActiveCollab API access on an Avista machine — the 1Password CLI and desktop-app integration, a long-lived API token exchanged from the user's login into ~/.claude/.env, and the ac client. Use when the user says "set up ActiveCollab", "connect me to ActiveCollab", "get an ActiveCollab token", "ac says not configured", "my ActiveCollab token stopped working", "401 from ActiveCollab", or before any other activecollab skill can run. Once per machine; the password is never stored or echoed.
 ---
 
 # ActiveCollab setup

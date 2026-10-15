@@ -1,6 +1,6 @@
 ---
 name: activecollab-audit
-description: Audit what was actually worked over a window — yesterday, last week, or the billing period — and say which hours are on the ActiveCollab timesheet and which are not, with the project and task each one belongs to. Measures from Claude Code session attention, git commits and client email together, because commits alone miss the half of the day spent in email, DK and WP admin. Use when the user says "audit yesterday", "what did I work on yesterday", "hours from last week", "is my time logged", "what's missing from ActiveCollab", "did I log everything", "close the period", "period audit", "hours for the billing period", "what should I log", or asks whether their timesheet matches the work. Read-only until it proposes records, and it never posts without explicit approval. Runs in the Claude desktop app and reads only the person running it — there is no shared store.
+description: Audit what was worked over a window — yesterday, last week or the billing period — and say which hours are on the ActiveCollab timesheet and which are not, with the project and task each belongs to, measured from session time, git commits and client email together. Use when the user says "audit yesterday", "what did I work on yesterday", "hours from last week", "is my time logged", "did I log everything", "close the period", "period audit", "what should I log", or asks whether their timesheet matches the work. Read-only until it proposes records.
 ---
 
 # Audit a window
