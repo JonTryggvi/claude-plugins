@@ -286,14 +286,20 @@ if want audit; then
   # 2026-08-22 period start into 2026-08-01. Pin both directions.
   check "yesterday is one day back, not day-of-month 1" \
     "$(AC_RUN_LOG=$AW bash "$RW" yesterday --today 2026-09-01 2>/dev/null | jq -r '.window.from')" "2026-08-31"
+  # 20 Jun 2026 is a Saturday: its Monday alternative is +2 days, not day-of-month 2.
   check "a weekend-shifted boundary adds days, not sets them" \
-    "$(AC_RUN_LOG=$AW bash "$RW" period --today 2026-09-25 2>/dev/null | jq -r '.end_alternatives[0].date')" "2026-09-21"
+    "$(AC_RUN_LOG=$AW bash "$RW" period --today 2026-06-25 2>/dev/null | jq -r '.end_alternatives[] | select(.label == "weekend-shift") | .date')" "2026-06-22"
 
-  # 19 Sep 2026 is a Saturday -> Monday the 21st. 19 Oct 2026 is a Monday -> no shift.
-  check "Saturday boundary moves to Monday" \
-    "$(AC_RUN_LOG=$AW bash "$RW" period --today 2026-09-25 2>/dev/null | jq -r '.window.to')" "2026-09-21"
+  # The period ends on the 20th, weekend or not; a weekend 20th offers the
+  # Monday beside it. 20 Sep 2026 is a Sunday, 20 Oct 2026 a Tuesday.
+  check "the period ends on the 20th even on a weekend" \
+    "$(AC_RUN_LOG=$AW bash "$RW" period --today 2026-09-25 2>/dev/null | jq -r '.window.to')" "2026-09-20"
+  check "a Sunday 20th offers Monday the 21st as the alternative" \
+    "$(AC_RUN_LOG=$AW bash "$RW" period --today 2026-09-25 2>/dev/null | jq -r '[.end_alternatives[].date] | join(",")')" "2026-09-20,2026-09-21"
   check "a weekday boundary is left alone" \
-    "$(AC_RUN_LOG=$AW bash "$RW" period --today 2026-10-25 2>/dev/null | jq -r '.window.to')" "2026-10-19"
+    "$(AC_RUN_LOG=$AW bash "$RW" period --today 2026-10-25 2>/dev/null | jq -r '.window.to')" "2026-10-20"
+  check "and offers no weekend alternative" \
+    "$(AC_RUN_LOG=$AW bash "$RW" period --today 2026-10-25 2>/dev/null | jq -r '.end_alternatives | length')" "1"
 
   # THE BOUNDARY TRAP: a one-day audit logged later than a period run has a
   # LATER window end. Resolving the next period start from it drops 22-23 Aug.
@@ -309,11 +315,31 @@ if want audit; then
   AC_RUN_LOG=$AW bash "$RL_AUDIT" append --from 2026-08-24 --to 2026-08-24 --user 6 --note d >/dev/null 2>&1
   check "period start ignores a later DAY run (legacy, unlabelled)" \
     "$(AC_RUN_LOG=$AW bash "$RW" period --today 2026-09-25 2>/dev/null | jq -r '.window.from')" "2026-08-22"
+  # That period was cut on the 21st, past the 20th — so the start moved, and must say why.
+  check "a cut past the 20th moves the start, from the run log" \
+    "$(AC_RUN_LOG=$AW bash "$RW" period --today 2026-09-25 2>/dev/null | jq -r '.provenance.start')" "run-log"
 
-  # With no period run at all the start is a guess, and must say so.
+  # A period that ended on the 20th: the next starts the 21st, and the shared
+  # boundary is not reported as an overlap with possibly-invoiced records.
   : > "$AW"
-  check "an empty log marks the start inferred" \
-    "$(AC_RUN_LOG=$AW bash "$RW" period --today 2026-09-25 2>/dev/null | jq -r '.provenance.start')" "inferred"
+  AC_RUN_LOG=$AW bash "$RL_AUDIT" append --from 2026-08-21 --to 2026-09-20 --user 6 --note p --kind period >/dev/null 2>&1
+  check "a period ending on the 20th is followed by one starting the 21st" \
+    "$(AC_RUN_LOG=$AW bash "$RW" period --today 2026-10-15 2>/dev/null | jq -r '.window.from')" "2026-09-21"
+  check "and the boundary day is not an overlap" \
+    "$(AC_RUN_LOG=$AW bash "$RW" period --today 2026-10-15 2>/dev/null | jq -r '(.overlapping_runs | length) + ([.notes[] | select(startswith("OVERLAP"))] | length)')" "0"
+
+  # A short previous period is a GAP to report, never a boundary to follow.
+  : > "$AW"
+  AC_RUN_LOG=$AW bash "$RL_AUDIT" append --from 2026-08-21 --to 2026-09-13 --user 6 --note patch --kind period >/dev/null 2>&1
+  check "a short previous period leaves the start on the 21st" \
+    "$(AC_RUN_LOG=$AW bash "$RW" period --today 2026-10-15 2>/dev/null | jq -r '.window.from')" "2026-09-21"
+  check "and reports the gap" \
+    "$(AC_RUN_LOG=$AW bash "$RW" period --today 2026-10-15 2>/dev/null | jq -r '[.notes[] | select(startswith("GAP"))] | length')" "1"
+
+  # With no period run, the start is the day after last month's 20th.
+  : > "$AW"
+  check "an empty log starts the day after last month's 20th" \
+    "$(AC_RUN_LOG=$AW bash "$RW" period --today 2026-09-25 2>/dev/null | jq -r '"\(.window.from) \(.provenance.start)"')" "2026-08-21 calendar"
   check "and asks for confirmation" \
     "$(AC_RUN_LOG=$AW bash "$RW" period --today 2026-09-25 2>/dev/null | jq -r '.needs_confirmation')" "true"
   check "yesterday needs no confirmation" \

@@ -53,23 +53,23 @@ bash "${CLAUDE_SKILL_DIR}/scripts/resolve-window.sh" period
 
 ### Why `period` is half arithmetic
 
-**The billing period runs from the 20th of one month to the 20th of the next** (`AC_PERIOD_DAY`, default
-20). The two ends are still resolved differently, and the script labels which is which in `provenance`:
+**The billing period ends on the 20th** (`AC_PERIOD_DAY`, default 20) **and the next one starts the day
+after.** The two ends are resolved differently, and the script labels which is which in `provenance`:
 
-- **START is arithmetic and not a proposal.** It is the ${AC_PERIOD_DAY}th of last month, full stop.
-  It used to be the day after the previous period ended, read from the run log — that drifted, because
-  every short or patched period moved the next boundary with it. The 2026-09-01..09-13 patch run left
-  **2026-08-22..08-31 covered by no period run at all**, and the next resolve then proposed a start of
-  2026-09-14, burying the hole instead of reporting it. The run log is now a *check* on the boundary, not
-  the source of it: the script emits a `GAP:` note when the previous period stopped short of it and an
-  `OVERLAP:` note when the previous period ran past it. **Read those notes** — an OVERLAP means some
-  dates in the window already carry posted, possibly invoiced records.
-- **END is only ever a proposal.** Put `end_alternatives` to the user as a **selection list**
+- **START is the day after last month's 20th — or later, never earlier.** If the last period run in the
+  run log ended past the 20th (a cut made on the Monday after a weekend 20th), the period starts the day
+  after that cut instead (`provenance.start: "run-log"`), so the slipped days are not proposed twice. It
+  never moves earlier: a previous period that stopped short of the 20th produces a `GAP:` note naming the
+  uncovered dates. (It used to follow the last run both ways, and drifted — the 2026-09-01..09-13 patch
+  run left **2026-08-22..08-31 covered by no period at all**, and the next resolve proposed a start of
+  2026-09-14, burying the hole.) **Read the notes**, and stop on a `CHECK:` or `ALREADY COVERED:` one.
+- **END is a proposal.** The 20th is recommended, weekend or not; when the 20th is a Saturday or Sunday
+  the following Monday is offered beside it. Put `end_alternatives` to the user as a **selection list**
   (`AskUserQuestion`), recommended first, with each option's reasoning as its description:
 
-  > **Period window** — start is 20 Aug 2026, the billing boundary. Which end date?
-  > - **20 Aug – 21 Sep** *(recommended)* — 20 Sep is a Sunday; the cut moves to Monday the 21st
-  > - **20 Aug – 20 Sep** — nominal boundary, ignoring the weekend shift
+  > **Period window** — start is 21 Aug 2026, the day after August's 20th. Which end date?
+  > - **21 Aug – 20 Sep** *(recommended)* — the period ends on the 20th (a Sunday)
+  > - **21 Aug – 21 Sep** — if the cut is made on Monday, end there; the next period then starts the 22nd
   > - *Other* — for when it slips again
 
 ### Which prior runs count as periods

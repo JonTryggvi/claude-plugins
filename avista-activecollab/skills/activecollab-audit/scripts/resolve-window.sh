@@ -11,20 +11,22 @@
 # JSON on stdout, a human summary on stderr. Reads nothing but the run log and
 # the calendar; writes nothing.
 #
-# WHY `period` IS NOT ARITHMETIC
+# WHY `period` IS NOT PURE ARITHMETIC
 #
-# The billing period runs from the 20th of one month to the 20th of the next
-# (override with AC_PERIOD_DAY). The END is moved to the next working day when
-# it lands on a weekend. That rule does NOT reproduce the periods actually
-# worked: 2026-07-21..2026-08-21 ran 21st-to-21st even though 19 Jul was a
-# Sunday (rule says the 20th) and 19 Aug was a Wednesday (rule says the 19th).
-# The boundary slips because the period is cut when someone gets to it.
+# The billing period ends on the 20th (override with AC_PERIOD_DAY) and the
+# next one starts the day after. Two things bend that:
 #
-# So the END is only ever a PROPOSAL — three candidates, for a human to pick.
-# The START is not a proposal either: it is the ${AC_PERIOD_DAY:-20}th of last
-# month. It used to be the day after the previous period ended,
-# read from the run log, because that is the only thing that guarantees
-# consecutive periods neither overlap nor leave a gap.
+# - A weekend 20th may be cut on the Monday instead. So the END is a
+#   PROPOSAL: the 20th recommended, the Monday offered beside it.
+# - When a cut did slip past the 20th, the next period starts the day after
+#   that cut rather than on the 21st, or the slipped days get proposed twice.
+#   The run log is the only record of where the last cut actually landed.
+#
+# The START never moves EARLIER than the 21st, though. It used to be "the day
+# after the last period run" in both directions, and that drifted: the
+# 2026-09-01..09-13 patch run left 2026-08-22..08-31 covered by no period at
+# all, and the next resolve proposed a start of 2026-09-14, burying the hole.
+# A previous period that stopped short of the 20th now yields a GAP note.
 #
 # WHICH RUNS COUNT AS PERIODS
 #
@@ -46,7 +48,6 @@ export LC_ALL="${LC_ALL:-en_US.UTF-8}"
 RUN_LOG="${AC_RUN_LOG:-$HOME/.claude/activecollab-runs.jsonl}"
 MIN_PERIOD_DAYS="${AC_MIN_PERIOD_DAYS:-21}"
 NOMINAL_DAY="${AC_PERIOD_DAY:-20}"
-LATEST_DAY="${AC_PERIOD_LATEST_DAY:-21}"
 
 MODE=""; FROM=""; TO=""; TRAILING=0; TODAY_OVERRIDE=""
 
@@ -133,7 +134,7 @@ case "$MODE" in
     ;;
 
   period)
-    # ---- START: the NOMINAL_DAY of last month; the last PERIOD run is only a check
+    # ---- START: the day after last month's NOMINAL_DAY, or after a cut that slipped past it
     PREV_END=""; PREV_AT=""
     if [ -s "$RUN_LOG" ]; then
       PREV=$(jq -rs --argjson min "$MIN_PERIOD_DAYS" '
@@ -151,51 +152,48 @@ case "$MODE" in
       PREV_AT=$(printf '%s' "$PREV" | cut -f2)
     fi
 
-    # The period is a CALENDAR window: the NOMINAL_DAY of last month through the
-    # NOMINAL_DAY of this month. The run log no longer MOVES this boundary — it
-    # only reports whether the previous period met it. A start that silently
-    # followed the last run drifted further every month: the 2026-09-01..09-13
-    # patch run left 2026-08-22..08-31 covered by no period run at all, and the
-    # next resolve then proposed a start of 2026-09-14, burying the hole.
+    # The period ends on the NOMINAL_DAY, so it starts the day after last
+    # month's. The run log can move that LATER (the last cut slipped past the
+    # boundary, so those days are already posted) but never EARLIER (a short
+    # previous period is a GAP to report, not a new boundary to follow).
     cur_month=${TODAY%-*}
     prev_month=$(d_add "${cur_month}-01" -1); prev_month=${prev_month%-*}
-    FROM="${prev_month}-$(printf '%02d' "$NOMINAL_DAY")"
+    FROM=$(d_add "${prev_month}-$(printf '%02d' "$NOMINAL_DAY")" 1)
     START_SRC="calendar"
-    NOTES+=("start is the ${NOMINAL_DAY}th of last month — the billing boundary, not a continuation of the last run")
 
     if [ -n "$PREV_END" ] && d_valid "$PREV_END"; then
       expected=$(d_add "$PREV_END" 1)
       if [ "$(d_epoch "$expected")" -lt "$(d_epoch "$FROM")" ]; then
         NOTES+=("GAP: the last period run ended $PREV_END (logged $PREV_AT), so $expected..$(d_add "$FROM" -1) is covered by NO period run. Audit that stretch separately or move the start back.")
       elif [ "$(d_epoch "$expected")" -gt "$(d_epoch "$FROM")" ]; then
-        NOTES+=("OVERLAP: the last period run ended $PREV_END (logged $PREV_AT), which is INSIDE this window. Records on $FROM..$PREV_END are already posted and may already be INVOICED — verify before proposing anything on those dates.")
+        NOTES+=("start moved from $FROM to $expected: the last period run ended $PREV_END (logged $PREV_AT), past the ${NOMINAL_DAY}th, so the days up to it are already posted.")
+        [ "$(d_epoch "$expected")" -gt "$(d_epoch "$(d_add "$FROM" 3)")" ] &&
+          NOTES+=("CHECK: that is more than a weekend shift past the ${NOMINAL_DAY}th — confirm the previous period really ran to $PREV_END.")
+        FROM="$expected"; START_SRC="run-log"
       fi
     else
-      NOTES+=("no prior period run in the log; there is nothing to check this boundary against")
+      NOTES+=("no prior period run in the log; start is the day after last month's ${NOMINAL_DAY}th, with nothing to check it against")
     fi
 
-    # ---- END: propose the nominal boundary, weekend-shifted, capped
+    # ---- END: the NOMINAL_DAY. A weekend NOMINAL_DAY may be cut on the Monday instead — offer it beside.
     m=${TODAY%-*}
     nominal="${m}-$(printf '%02d' "$NOMINAL_DAY")"
+    TO="$nominal"; END_SRC="proposed"
+    dayname=$(date -j -f '%Y-%m-%d' "$nominal" '+%A' 2>/dev/null)
     case "$(d_dow "$nominal")" in
-      Sat) shifted=$(d_add "$nominal" 2); why="the ${NOMINAL_DAY}th is a Saturday; cut moves to Monday" ;;
-      Sun) shifted=$(d_add "$nominal" 1); why="the ${NOMINAL_DAY}th is a Sunday; cut moves to Monday" ;;
-      *)   shifted="$nominal";            why="the ${NOMINAL_DAY}th is a $(d_dow "$nominal"); no weekend shift" ;;
+      Sat) monday=$(d_add "$nominal" 2) ;;
+      Sun) monday=$(d_add "$nominal" 1) ;;
+      *)   monday="" ;;
     esac
-    cap="${m}-$(printf '%02d' "$LATEST_DAY")"
-    [ "$(d_epoch "$shifted")" -gt "$(d_epoch "$cap")" ] && shifted="$cap"
-
-    TO="$shifted"; END_SRC="proposed"
-
-    ALTS=$(jq -n --arg a "$shifted" --arg b "$nominal" --arg c "$cap" --arg why "$why" --arg day "$NOMINAL_DAY" '
-      [ {date: $a, label: "recommended", why: $why},
-        {date: $b, label: "nominal",     why: ("the " + $day + "th itself, ignoring any weekend shift")},
-        {date: $c, label: "latest",      why: "the 21st — where the last two periods actually landed, because the cut slips to when someone gets to it"} ]
-      # dedupe, then put the recommended one back on top: the selection card
-      # convention is recommended-first, and unique_by re-sorts by date.
-      | unique_by(.date)
-      | sort_by(.label != "recommended")')
-    NOTES+=("the END is a PROPOSAL. The ${NOMINAL_DAY}th-plus-weekend rule has not always reproduced the periods actually worked (2026-07-21..2026-08-21 ran 21st-to-21st). Offer the alternatives and let a human pick.")
+    ALTS=$(jq -n --arg a "$nominal" --arg b "$monday" --arg dn "$dayname" --arg day "$NOMINAL_DAY" '
+      [ {date: $a, label: "recommended", why: ("the period ends on the " + $day + "th (a " + $dn + ")")} ]
+      + (if $b == "" then [] else
+          [ {date: $b, label: "weekend-shift",
+             why: ("the " + $day + "th is a " + $dn + "; if the cut is made on Monday, end there — the next period then starts the day after")} ]
+        end)')
+    NOTES+=("the END is a PROPOSAL: the ${NOMINAL_DAY}th by default; a weekend ${NOMINAL_DAY}th may be cut on the Monday instead. Offer the alternatives and let a human pick.")
+    [ "$(d_epoch "$FROM")" -gt "$(d_epoch "$TO")" ] &&
+      NOTES+=("ALREADY COVERED: the last period run ended $PREV_END, after this period's proposed end — there is nothing new to resolve yet.")
     ;;
 esac
 
