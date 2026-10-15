@@ -1,6 +1,6 @@
 {
   "name": "avista-design-systems",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Brand documents and client reports in the org's Claude Design design systems, rendered to a print-ready PDF. Lists the systems the login can reach, reads each one's real tokens and logo — following the @import chain on systems whose entry file is only imports, which is where naive parsing silently produces an unbranded document — and renders through headless Chrome so the system's web fonts actually embed. Handles view-only systems, which never enumerate via list_projects but stay fully readable by projectId.",
   "author": {
     "name": "Avista",
