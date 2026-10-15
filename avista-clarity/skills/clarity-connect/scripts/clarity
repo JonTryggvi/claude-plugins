@@ -1,0 +1,768 @@
+#!/usr/bin/env python3
+"""clarity: a small client for Avista Clarity (clarity.avista.is).
+
+Clarity has no API tokens. Owners log in with email and password and get a
+30-day session cookie. `clarity login` does that exchange once, in the user's
+own terminal, and stores only the cookie in ~/.claude/.env as CLARITY_SESSION
+(mode 0600). The password is read from the terminal or from 1Password, sent
+once over stdin to curl, and never written, echoed or passed as an argument.
+
+Every request goes through curl with its config on stdin, so the session
+cookie never appears in a process listing either. curl rather than urllib
+because the stock macOS python3 often has no CA bundle; curl uses the
+system keychain.
+
+Exit codes: 0 ok, 2 usage, 3 not logged in or session expired,
+4 API error, 5 network error.
+"""
+
+import argparse
+import getpass
+import json
+import os
+import re
+import subprocess
+import sys
+import urllib.parse
+import xml.etree.ElementTree as ET
+from html.parser import HTMLParser
+
+DEFAULT_URL = "https://clarity.avista.is"
+ENV_FILE = os.path.expanduser("~/.claude/.env")
+SESSION_COOKIE = "clarity_sid"
+USER_AGENT = "AvistaClarityCLI/0.1 (+https://clarity.avista.is)"
+
+# Mirrors SKIP_EXTENSIONS in apps/worker/src/lib/discover.ts so the pages we
+# push are the same set Clarity's own discovery would accept.
+SKIP_EXTENSIONS = {
+    "pdf", "zip", "gz", "tar",
+    "png", "jpg", "jpeg", "gif", "webp", "svg", "ico", "avif",
+    "mp3", "mp4", "mov", "webm", "wav", "ogg",
+    "css", "js", "mjs", "xml", "json", "txt",
+    "woff", "woff2", "ttf", "otf", "eot",
+}
+SKIP_DIRS = {"node_modules", "dist", "build", "vendor"}
+MAX_SITEMAPS = 25
+
+
+class CliError(Exception):
+    def __init__(self, message, code=4):
+        super().__init__(message)
+        self.code = code
+
+
+# ---------- env file ----------
+
+def read_env():
+    values = {}
+    try:
+        with open(ENV_FILE) as fh:
+            for line in fh:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, _, val = line.partition("=")
+                key = key.strip()
+                if key.startswith("export "):
+                    key = key[len("export "):].strip()
+                val = val.strip()
+                if len(val) >= 2 and val[0] == val[-1] and val[0] in "\"'":
+                    val = val[1:-1]
+                values[key] = val
+    except FileNotFoundError:
+        pass
+    return values
+
+
+def write_env(updates):
+    """Set or remove keys in ~/.claude/.env, keeping every other line as-is.
+
+    A value of None removes the key.
+    """
+    os.makedirs(os.path.dirname(ENV_FILE), exist_ok=True)
+    lines = []
+    if os.path.exists(ENV_FILE):
+        with open(ENV_FILE) as fh:
+            lines = fh.read().splitlines()
+    seen = set()
+    out = []
+    for line in lines:
+        m = re.match(r"\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=", line)
+        if m and m.group(1) in updates:
+            key = m.group(1)
+            if key in seen or updates[key] is None:
+                continue
+            out.append("%s=%s" % (key, updates[key]))
+            seen.add(key)
+        else:
+            out.append(line)
+    for key, val in updates.items():
+        if key not in seen and val is not None:
+            out.append("%s=%s" % (key, val))
+    old_umask = os.umask(0o077)
+    try:
+        tmp = ENV_FILE + ".tmp"
+        with open(tmp, "w") as fh:
+            fh.write("\n".join(out) + "\n")
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, ENV_FILE)
+    finally:
+        os.umask(old_umask)
+
+
+def base_url():
+    url = os.environ.get("CLARITY_URL") or read_env().get("CLARITY_URL") or DEFAULT_URL
+    return url.rstrip("/")
+
+
+def session_token():
+    return os.environ.get("CLARITY_SESSION") or read_env().get("CLARITY_SESSION")
+
+
+# ---------- http ----------
+
+def _quote(value):
+    return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def curl(method, url, body=None, cookie=None, include_headers=False, accept="application/json"):
+    """Run one request through curl, with every argument on stdin.
+
+    Returns (status, headers_text, body_text).
+    """
+    cfg = [
+        "url = %s" % _quote(url),
+        "request = %s" % _quote(method),
+        "silent",
+        "show-error",
+        "location",
+        "max-time = 120",
+        "user-agent = %s" % _quote(USER_AGENT),
+        "header = %s" % _quote("Accept: " + accept),
+        'write-out = "\\n__CLARITY_STATUS__%{http_code}"',
+    ]
+    if include_headers:
+        cfg.append("include")
+    if cookie:
+        cfg.append("header = %s" % _quote("Cookie: %s=%s" % (SESSION_COOKIE, cookie)))
+    if body is not None:
+        cfg.append("header = %s" % _quote("Content-Type: application/json"))
+        cfg.append("data-binary = %s" % _quote(body))
+    proc = subprocess.run(
+        ["curl", "-K", "-"],
+        input="\n".join(cfg) + "\n",
+        capture_output=True,
+        text=True,
+    )
+    if proc.returncode != 0:
+        raise CliError("network error talking to %s: %s" % (url, proc.stderr.strip()), 5)
+    out, _, status = proc.stdout.rpartition("\n__CLARITY_STATUS__")
+    headers = ""
+    if include_headers:
+        # With redirects followed there can be several header blocks; the
+        # last one belongs to the final response.
+        parts = re.split(r"\r?\n\r?\n", out)
+        idx = 0
+        while idx < len(parts) and re.match(r"HTTP/\S+ \d{3}", parts[idx]):
+            headers = parts[idx]
+            idx += 1
+        out = "\n\n".join(parts[idx:])
+    return int(status or 0), headers, out
+
+
+def api(method, path, payload=None, allow=()):
+    token = session_token()
+    if not token:
+        raise CliError("not logged in to Clarity. Run: ~/.claude/bin/clarity login", 3)
+    body = json.dumps(payload) if payload is not None else None
+    status, _, text = curl(method, base_url() + path, body=body, cookie=token)
+    if status == 401:
+        raise CliError(
+            "Clarity session expired or revoked. Run: ~/.claude/bin/clarity login", 3
+        )
+    try:
+        data = json.loads(text) if text.strip() else {}
+    except ValueError:
+        data = {"raw": text[:500]}
+    if status in allow:
+        return status, data
+    if status < 200 or status >= 300:
+        raise CliError("%s %s -> HTTP %s: %s" % (method, path, status, json.dumps(data)[:500]))
+    return status, data
+
+
+def emit(obj):
+    json.dump(obj, sys.stdout, indent=2, ensure_ascii=False)
+    sys.stdout.write("\n")
+
+
+# ---------- url and path helpers ----------
+
+def normalize_path(path_and_search):
+    """Same rule as normalizePath() in the worker: strip a trailing index.html."""
+    q = path_and_search.find("?")
+    path = path_and_search if q < 0 else path_and_search[:q]
+    search = "" if q < 0 else path_and_search[q:]
+    stripped = re.sub(r"(^|/)index\.html?$", r"\1", path, flags=re.I)
+    if stripped in ("", "/"):
+        return "/" + search
+    return stripped + search
+
+
+def prettify_path(path):
+    """Same rule as prettifyPath() in the worker."""
+    if path in ("/", ""):
+        return "Home"
+    search = path[path.index("?"):] if "?" in path else ""
+    just = path[: path.index("?")] if search else path
+    segments = [s for s in just.split("/") if s]
+    last = re.sub(r"\.html?$", "", segments[-1] if segments else "", flags=re.I)
+    if not last:
+        return "Home"
+    words = [w for w in re.split(r"[-_\s]+", urllib.parse.unquote(last)) if w]
+    name = " ".join(w[:1].upper() + w[1:].lower() for w in words)
+    return name + ((" " + search) if search else "")
+
+
+def target_origin(target_url):
+    u = urllib.parse.urlsplit(target_url)
+    return "%s://%s" % (u.scheme, u.netloc)
+
+
+def has_skipped_extension(pathname):
+    last = pathname.rsplit("/", 1)[-1]
+    if "." not in last:
+        return False
+    return last.rsplit(".", 1)[-1].lower() in SKIP_EXTENSIONS
+
+
+def site_key(url):
+    """Host without www, plus path without trailing slash or index.html."""
+    u = urllib.parse.urlsplit(url if "://" in url else "https://" + url)
+    host = (u.hostname or "").lower()
+    if host.startswith("www."):
+        host = host[4:]
+    path = normalize_path(u.path or "/").rstrip("/")
+    return host, path
+
+
+# ---------- titles ----------
+
+class _TitleParser(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.in_title = False
+        self.done = False
+        self.title = ""
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "title" and not self.done:
+            self.in_title = True
+
+    def handle_endtag(self, tag):
+        if tag == "title" and self.in_title:
+            self.in_title = False
+            self.done = True
+
+    def handle_data(self, data):
+        if self.in_title:
+            self.title += data
+
+
+def html_title(text):
+    p = _TitleParser()
+    try:
+        p.feed(text[:200000])
+    except Exception:
+        return ""
+    return re.sub(r"\s+", " ", p.title).strip()
+
+
+def page_name(title, path):
+    name = title or prettify_path(path)
+    return name[:120]
+
+
+# ---------- page collection ----------
+
+def _sitemap_locs(xml_text):
+    """Return (kind, [loc, ...]) where kind is 'index' or 'urlset'."""
+    try:
+        root = ET.fromstring(xml_text.encode("utf-8"))
+    except ET.ParseError:
+        # Fall back to the same tolerant regex the worker uses.
+        kind = "index" if re.search(r"<sitemapindex[\s>]", xml_text, re.I) else "urlset"
+        return kind, [m.strip() for m in re.findall(r"<loc>\s*([^<]+?)\s*</loc>", xml_text, re.I)]
+    tag = root.tag.rsplit("}", 1)[-1].lower()
+    locs = [
+        (el.text or "").strip()
+        for el in root.iter()
+        if el.tag.rsplit("}", 1)[-1].lower() == "loc" and (el.text or "").strip()
+    ]
+    return ("index" if tag == "sitemapindex" else "urlset"), locs
+
+
+def _add_page(out, seen, path, name, group):
+    if has_skipped_extension(path.split("?", 1)[0]):
+        return
+    # Percent-encode the way a browser does, so /vörur.html is stored as
+    # /v%C3%B6rur.html. Comments anchor to location.href, which is encoded,
+    # and an unencoded path would never match them. Existing %XX is kept.
+    key = normalize_path(urllib.parse.quote(path, safe="/?&=%:@!$'()*+,;~"))
+    if key in seen:
+        return
+    seen.add(key)
+    out.append({"name": page_name(name, key), "path": key, "group": group})
+
+
+def _local_file_for(root, path):
+    rel = urllib.parse.unquote(path.split("?", 1)[0]).lstrip("/")
+    candidates = []
+    if rel == "" or rel.endswith("/"):
+        candidates.append(os.path.join(root, rel, "index.html"))
+    else:
+        candidates += [
+            os.path.join(root, rel),
+            os.path.join(root, rel + ".html"),
+            os.path.join(root, rel, "index.html"),
+        ]
+    for c in candidates:
+        if os.path.isfile(c):
+            return c
+    return None
+
+
+def _read_title(file_path):
+    if not file_path:
+        return ""
+    try:
+        with open(file_path, encoding="utf-8", errors="replace") as fh:
+            return html_title(fh.read(200000))
+    except OSError:
+        return ""
+
+
+def collect_from_dir(root):
+    root = os.path.abspath(root)
+    out, seen = [], set()
+    sitemap = os.path.join(root, "sitemap.xml")
+    if os.path.isfile(sitemap):
+        with open(sitemap, encoding="utf-8", errors="replace") as fh:
+            kind, locs = _sitemap_locs(fh.read())
+        if kind == "urlset" and locs:
+            for loc in locs:
+                u = urllib.parse.urlsplit(loc)
+                path = (u.path or "/") + (("?" + u.query) if u.query else "")
+                if not path.startswith("/"):
+                    path = "/" + path
+                _add_page(out, seen, path, _read_title(_local_file_for(root, path)), "sitemap.xml")
+            return {"source": "local sitemap.xml", "pages": out, "truncated": False}
+
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = sorted(
+            d for d in dirnames if not d.startswith(".") and d not in SKIP_DIRS
+        )
+        for fn in sorted(filenames):
+            if not fn.lower().endswith((".html", ".htm")):
+                continue
+            full = os.path.join(dirpath, fn)
+            rel = os.path.relpath(full, root).replace(os.sep, "/")
+            _add_page(out, seen, "/" + rel, _read_title(full), "html files")
+    # Home first, then alphabetical, so the tab strip opens on the index.
+    out.sort(key=lambda p: (p["path"] != "/", p["path"]))
+    return {"source": "local html files", "pages": out, "truncated": False}
+
+
+def _fetch(url):
+    status, _, text = curl("GET", url, accept="application/xml,text/xml,text/html;q=0.9")
+    return status, text
+
+
+def collect_from_url(site, with_titles=False, title_limit=60):
+    if "://" not in site:
+        site = "https://" + site
+    origin_u = urllib.parse.urlsplit(site)
+    origin = "%s://%s" % (origin_u.scheme, origin_u.netloc)
+    accepted = {origin_u.hostname.lower()}
+    if origin_u.hostname.lower().startswith("www."):
+        accepted.add(origin_u.hostname.lower()[4:])
+    else:
+        accepted.add("www." + origin_u.hostname.lower())
+
+    # WordPress core serves /wp-sitemap.xml, Yoast and Rank Math serve
+    # /sitemap_index.xml; both are sitemap indexes, which Clarity's own
+    # discovery does not follow. We do.
+    candidates = ["/sitemap.xml", "/sitemap_index.xml", "/wp-sitemap.xml"]
+    queue, visited, out, seen = [], set(), [], set()
+    source = None
+    for c in candidates:
+        status, text = _fetch(origin + c)
+        if 200 <= status < 300 and "<loc>" in text.lower():
+            queue.append((origin + c, text))
+            source = origin + c
+            break
+    if not queue:
+        return {"source": None, "pages": [], "truncated": False,
+                "note": "no sitemap at /sitemap.xml, /sitemap_index.xml or /wp-sitemap.xml"}
+
+    truncated = False
+    while queue:
+        url, text = queue.pop(0)
+        if url in visited:
+            continue
+        visited.add(url)
+        if text is None:
+            status, text = _fetch(url)
+            if not (200 <= status < 300):
+                continue
+        kind, locs = _sitemap_locs(text)
+        group = url.rsplit("/", 1)[-1]
+        if kind == "index":
+            for loc in locs:
+                if len(visited) + len(queue) >= MAX_SITEMAPS:
+                    truncated = True
+                    break
+                queue.append((loc, None))
+            continue
+        for loc in locs:
+            u = urllib.parse.urlsplit(loc)
+            if (u.hostname or "").lower() not in accepted:
+                continue
+            path = (u.path or "/") + (("?" + u.query) if u.query else "")
+            _add_page(out, seen, path, "", group)
+
+    if with_titles:
+        for page in out[:title_limit]:
+            status, text = _fetch(origin + page["path"])
+            if 200 <= status < 300:
+                t = html_title(text)
+                if t:
+                    page["name"] = t[:120]
+    return {"source": source, "pages": out, "truncated": truncated}
+
+
+# ---------- commands ----------
+
+def cmd_login(args):
+    url = base_url()
+    if args.op:
+        ref = args.op.rstrip("/")
+        try:
+            email = subprocess.run(["op", "read", ref + "/username"], capture_output=True,
+                                   text=True, check=True, stdin=subprocess.DEVNULL).stdout.strip()
+            password = subprocess.run(["op", "read", ref + "/password"], capture_output=True,
+                                      text=True, check=True, stdin=subprocess.DEVNULL).stdout.rstrip("\n")
+        except (OSError, subprocess.CalledProcessError):
+            raise CliError("could not read the login from 1Password (%s). Is the desktop app "
+                           "unlocked, with Settings > Developer > Integrate with 1Password CLI on?" % ref, 2)
+    else:
+        default = args.email
+        if not default:
+            try:
+                default = subprocess.run(["git", "config", "--global", "user.email"],
+                                         capture_output=True, text=True).stdout.strip()
+            except OSError:
+                default = ""
+            if not default.lower().endswith("@avista.is"):
+                default = ""
+        if args.email:
+            email = args.email
+        else:
+            if not sys.stdin.isatty():
+                raise CliError("run this in your own terminal, it asks for your password", 2)
+            prompt = "Clarity email%s: " % (" [%s]" % default if default else "")
+            email = input(prompt).strip() or default
+        password = getpass.getpass("Clarity password (not shown): ")
+    if not email or not password:
+        raise CliError("email and password are both needed", 2)
+
+    body = json.dumps({"email": email, "password": password})
+    password = None
+    status, headers, text = curl("POST", url + "/api/auth/login", body=body, include_headers=True)
+    body = None
+    if status == 401:
+        raise CliError("Clarity rejected that email and password", 3)
+    if status != 200:
+        raise CliError("login failed with HTTP %s: %s" % (status, text[:300]))
+    m = re.search(r"(?im)^set-cookie:\s*%s=([^;\s]+)" % SESSION_COOKIE, headers)
+    if not m:
+        raise CliError("login succeeded but Clarity sent no session cookie")
+    updates = {"CLARITY_SESSION": m.group(1)}
+    if url != DEFAULT_URL or "CLARITY_URL" not in read_env():
+        updates["CLARITY_URL"] = url
+    write_env(updates)
+    user = json.loads(text).get("user", {})
+    print("Logged in to %s as %s <%s>." % (url, user.get("name", "?"), user.get("email", "?")))
+    print("Session saved to ~/.claude/.env as CLARITY_SESSION. It lasts 30 days.")
+    return 0
+
+
+def cmd_logout(args):
+    token = session_token()
+    if token:
+        try:
+            curl("POST", base_url() + "/api/auth/logout", body="{}", cookie=token)
+        except CliError:
+            pass
+    write_env({"CLARITY_SESSION": None})
+    print("Logged out. CLARITY_SESSION removed from ~/.claude/.env.")
+    return 0
+
+
+def cmd_whoami(args):
+    _, data = api("GET", "/api/me")
+    user = data.get("user") or {}
+    emit({"url": base_url(), "name": user.get("name"), "email": user.get("email")})
+    return 0
+
+
+def _summary(p):
+    base = base_url()
+    return {
+        "id": p["id"],
+        "name": p["name"],
+        "targetUrl": p["targetUrl"],
+        "archived": p.get("archivedAt") is not None,
+        "openComments": p.get("openCommentCount", 0),
+        "createdBy": p.get("createdByEmail"),
+        "dashboardUrl": "%s/projects/%s" % (base, p["id"]),
+        "shareUrl": "%s/p/%s" % (base, p["shareToken"]),
+    }
+
+
+def cmd_projects(args):
+    _, data = api("GET", "/api/projects?includeArchived=1" if args.all else "/api/projects")
+    emit([_summary(p) for p in data.get("projects", [])])
+    return 0
+
+
+def cmd_find(args):
+    _, data = api("GET", "/api/projects?includeArchived=1")
+    want_host, want_path = site_key(args.url)
+    exact, same_host = [], []
+    for p in data.get("projects", []):
+        host, path = site_key(p["targetUrl"])
+        if host != want_host:
+            continue
+        (exact if path == want_path else same_host).append(_summary(p))
+    emit({"exact": exact, "sameHost": same_host})
+    return 0
+
+
+def cmd_create(args):
+    payload = {"name": args.name, "targetUrl": args.url, "discover": bool(args.discover)}
+    _, data = api("POST", "/api/projects", payload)
+    result = _summary(data["project"])
+    if "discoveryStatus" in data:
+        result["discoveryStatus"] = data["discoveryStatus"]
+    emit(result)
+    return 0
+
+
+def cmd_project(args):
+    _, data = api("GET", "/api/projects/%s" % args.project_id)
+    emit(_summary(data["project"]))
+    return 0
+
+
+def cmd_unarchive(args):
+    api("POST", "/api/projects/%s/unarchive" % args.project_id)
+    print("Unarchived %s." % args.project_id)
+    return 0
+
+
+def cmd_pages(args):
+    _, data = api("GET", "/api/projects/%s/pages" % args.project_id)
+    emit(data.get("pages", []))
+    return 0
+
+
+def cmd_collect(args):
+    if bool(args.dir) == bool(args.url):
+        raise CliError("give exactly one of --dir or --url", 2)
+    if args.dir:
+        result = collect_from_dir(args.dir)
+    else:
+        result = collect_from_url(args.url, with_titles=args.titles)
+    if args.group:
+        wanted = set(args.group)
+        result["pages"] = [p for p in result["pages"] if p["group"] in wanted]
+    groups = {}
+    for p in result["pages"]:
+        groups[p["group"]] = groups.get(p["group"], 0) + 1
+    result["groups"] = groups
+    result["count"] = len(result["pages"])
+    emit(result)
+    return 0
+
+
+def _load_source(path):
+    with (sys.stdin if path == "-" else open(path)) as fh:
+        data = json.load(fh)
+    pages = data["pages"] if isinstance(data, dict) else data
+    return [
+        {"name": p["name"][:120],
+         "path": normalize_path(urllib.parse.quote(p["path"], safe="/?&=%:@!$'()*+,;~"))}
+        for p in pages
+    ]
+
+
+def cmd_sync(args):
+    source = _load_source(args.source)
+    _, data = api("GET", "/api/projects/%s/pages" % args.project_id)
+    existing = data.get("pages", [])
+    by_path = {p["path"]: p for p in existing}
+    # Clarity stores whatever path it was given, so an older page saved as
+    # /index.html still counts as the home page.
+    norm_existing = {normalize_path(p["path"]): p for p in existing}
+    source_paths = {p["path"] for p in source}
+
+    to_add = [p for p in source if p["path"] not in by_path and p["path"] not in norm_existing]
+    unhide = [norm_existing[p["path"]] for p in source
+              if p["path"] in norm_existing and norm_existing[p["path"]].get("hidden")]
+    missing = [p for p in existing
+               if normalize_path(p["path"]) not in source_paths and not p.get("hidden")]
+
+    plan = {
+        "projectId": args.project_id,
+        "inSource": len(source),
+        "inClarity": len(existing),
+        "add": [{"name": p["name"], "path": p["path"]} for p in to_add],
+        "hiddenButBackInSource": [{"id": p["id"], "name": p["name"], "path": p["path"]} for p in unhide],
+        "missingFromSource": [
+            {"id": p["id"], "name": p["name"], "path": p["path"],
+             "openComments": p.get("openCommentCount", 0),
+             "totalComments": p.get("totalCommentCount", 0)}
+            for p in missing
+        ],
+        "applied": False,
+    }
+    if args.check_live:
+        # A page list built from a folder is only right if the folder is what
+        # is deployed. Ask the live site about every page we'd add or hide.
+        _, proj = api("GET", "/api/projects/%s" % args.project_id)
+        origin = target_origin(proj["project"]["targetUrl"])
+        not_live = []
+        for entry in plan["add"]:
+            status, _, _ = curl("GET", origin + entry["path"], accept="text/html")
+            entry["liveStatus"] = status
+            if not (200 <= status < 300):
+                not_live.append(entry["path"])
+        for entry in plan["missingFromSource"]:
+            status, _, _ = curl("GET", origin + entry["path"], accept="text/html")
+            entry["liveStatus"] = status
+        plan["addButNotLive"] = not_live
+        plan["missingButStillLive"] = [
+            e["path"] for e in plan["missingFromSource"] if 200 <= e["liveStatus"] < 300
+        ]
+    if not args.apply:
+        emit(plan)
+        return 0
+
+    added, failed = [], []
+    for p in to_add:
+        status, resp = api("POST", "/api/projects/%s/pages" % args.project_id,
+                           {"name": p["name"], "path": p["path"]}, allow=(400, 409))
+        if status in (200, 201):
+            added.append(p["path"])
+        else:
+            failed.append({"path": p["path"], "status": status, "error": resp.get("error")})
+    for p in unhide:
+        api("POST", "/api/projects/%s/pages/%s/visibility" % (args.project_id, p["id"]), {"hidden": False})
+    hidden = []
+    if args.hide_missing:
+        # With --check-live, a page that dropped out of the source but still
+        # loads on the site is a stale source, not a removed page. Keep it.
+        still_live = set(plan.get("missingButStillLive", []))
+        for p in missing:
+            if p["path"] in still_live:
+                continue
+            api("POST", "/api/projects/%s/pages/%s/visibility" % (args.project_id, p["id"]), {"hidden": True})
+            hidden.append(p["path"])
+    plan.update({"applied": True, "added": added, "failed": failed,
+                 "unhidden": [p["path"] for p in unhide], "hidden": hidden})
+    emit(plan)
+    return 0 if not failed else 4
+
+
+def cmd_discover(args):
+    _, data = api("POST", "/api/projects/%s/pages/discover" % args.project_id)
+    emit({"status": data.get("status"), "skipped": data.get("skipped"),
+          "added": [{"name": p["name"], "path": p["path"]} for p in data.get("added", [])]})
+    return 0
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(prog="clarity", description="Avista Clarity client")
+    sub = ap.add_subparsers(dest="cmd")
+
+    p = sub.add_parser("login", help="log in once and store the session (run in your own terminal)")
+    p.add_argument("--email")
+    p.add_argument("--op", metavar="op://Vault/Item", help="read username and password from 1Password")
+    p.set_defaults(fn=cmd_login)
+
+    sub.add_parser("logout", help="end the session and forget it").set_defaults(fn=cmd_logout)
+    sub.add_parser("whoami", help="check the stored session").set_defaults(fn=cmd_whoami)
+
+    p = sub.add_parser("projects", help="list projects")
+    p.add_argument("--all", action="store_true", help="include archived")
+    p.set_defaults(fn=cmd_projects)
+
+    p = sub.add_parser("find", help="find projects for a site URL")
+    p.add_argument("url")
+    p.set_defaults(fn=cmd_find)
+
+    p = sub.add_parser("create", help="create a project")
+    p.add_argument("--name", required=True)
+    p.add_argument("--url", required=True)
+    p.add_argument("--discover", action="store_true", help="let Clarity crawl for pages (max 30)")
+    p.set_defaults(fn=cmd_create)
+
+    p = sub.add_parser("project", help="show one project")
+    p.add_argument("project_id")
+    p.set_defaults(fn=cmd_project)
+
+    p = sub.add_parser("unarchive", help="restore an archived project")
+    p.add_argument("project_id")
+    p.set_defaults(fn=cmd_unarchive)
+
+    p = sub.add_parser("pages", help="list a project's pages")
+    p.add_argument("project_id")
+    p.set_defaults(fn=cmd_pages)
+
+    p = sub.add_parser("collect", help="build a page list from a folder or a live sitemap")
+    p.add_argument("--dir")
+    p.add_argument("--url")
+    p.add_argument("--titles", action="store_true", help="with --url, fetch <title> for up to 60 pages")
+    p.add_argument("--group", action="append", help="keep only pages from this sitemap file (repeatable)")
+    p.set_defaults(fn=cmd_collect)
+
+    p = sub.add_parser("sync", help="compare a page list with Clarity, and apply with --apply")
+    p.add_argument("project_id")
+    p.add_argument("--from", dest="source", required=True, help="JSON from `collect`, or - for stdin")
+    p.add_argument("--apply", action="store_true")
+    p.add_argument("--hide-missing", action="store_true",
+                   help="hide pages that are no longer in the source (reversible, keeps comments)")
+    p.add_argument("--check-live", action="store_true",
+                   help="fetch each page to add or hide from the live site and report its status")
+    p.set_defaults(fn=cmd_sync)
+
+    p = sub.add_parser("discover", help="ask Clarity to crawl the live site for new pages")
+    p.add_argument("project_id")
+    p.set_defaults(fn=cmd_discover)
+
+    args = ap.parse_args(argv)
+    if not getattr(args, "fn", None):
+        ap.print_help()
+        return 2
+    try:
+        return args.fn(args)
+    except CliError as e:
+        sys.stderr.write("clarity: %s\n" % e)
+        return e.code
+    except KeyboardInterrupt:
+        return 130
+
+
+if __name__ == "__main__":
+    sys.exit(main())

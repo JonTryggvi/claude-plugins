@@ -1,0 +1,20 @@
+{
+  "name": "avista-clarity",
+  "version": "0.1.0",
+  "description": "Connect projects to Avista Clarity (clarity.avista.is) and push their pages there for client review. Finds an existing project by URL before creating one, links the repo with a committed .clarity.json so the whole team lands on the same project, and syncs the page list from the folder's HTML and sitemap or from the live site's sitemap, following the WordPress sitemap indexes that Clarity's own 30-page crawler skips. Sync is a dry run first, adds and unhides pages, never deletes, and only hides pages that vanished after the user agrees, so pinned comments stay reachable. Static HTML folders that aren't live yet get a private Avista GitHub repo and a Cloudflare Worker deploy, with the .assetsignore that keeps .git off the public site. Clarity has no API tokens, so a one-time login in the user's own terminal stores a 30-day session cookie in ~/.claude/.env; the password is never stored, echoed, passed as a process argument or seen by Claude.",
+  "author": {
+    "name": "Avista",
+    "url": "https://avista.is"
+  },
+  "homepage": "https://avista.is",
+  "keywords": [
+    "clarity",
+    "review",
+    "client-feedback",
+    "sitemap",
+    "cloudflare",
+    "static-site",
+    "wordpress",
+    "avista"
+  ]
+}

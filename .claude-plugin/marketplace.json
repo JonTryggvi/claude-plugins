@@ -65,6 +65,11 @@
       "name": "avista-wp-fleet",
       "source": "./avista-wp-fleet",
       "description": "Manage Avista's WPMU DEV sites as one fleet — a read-only API key test that finds out what the Hub key can actually reach (API mode vs SSH mode), the customer ↔ site links the Avista CRM already holds, an SSH reachability map, and one joined site map that inventory, staged plugin rollouts and drift reports build on. The account-wide key is never echoed, pasted into chat or passed as a process argument."
+    },
+    {
+      "name": "avista-clarity",
+      "source": "./avista-clarity",
+      "description": "Connect projects to Avista Clarity (clarity.avista.is) and push their pages there for client review. Finds an existing project by URL before creating one, links the repo with a committed .clarity.json so the whole team lands on the same project, and syncs the page list from the folder's HTML and sitemap or from the live site's sitemap, following the WordPress sitemap indexes that Clarity's own 30-page crawler skips. Sync is a dry run first, adds and unhides pages, never deletes, and only hides pages that vanished after the user agrees, so pinned comments stay reachable. Static HTML folders that aren't live yet get a private Avista GitHub repo and a Cloudflare Worker deploy, with the .assetsignore that keeps .git off the public site. Clarity has no API tokens, so a one-time login in the user's own terminal stores a 30-day session cookie in ~/.claude/.env; the password is never stored, echoed, passed as a process argument or seen by Claude."
     }
   ]
 }
