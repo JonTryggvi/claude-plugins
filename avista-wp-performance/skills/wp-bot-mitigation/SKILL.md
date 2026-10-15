@@ -1,6 +1,6 @@
 ---
 name: wp-bot-mitigation
-description: Deploy a bot firewall (mu-plugin) + robots.txt to an Avista WordPress site whose PHP workers are being saturated by aggressive crawlers hitting uncached Breakdance pages — the fix for the "bots are ~a third of traffic and crawling cold pages" finding from wp-perf-audit. The mu-plugin returns an early 403 to zero-value scrapers / AI-trainers / broken crawlers BEFORE the expensive render (it loads before regular plugins), while leaving Googlebot, bingbot, the WP loopback, cron, admin, REST, admin-ajax, and facebookexternalhit (link previews) untouched; the robots.txt politely tells compliant AI/SEO bots to leave and keeps all crawlers out of expensive query-string / feed / REST URL spaces. Use when the user says "block the bots", "deploy the bot firewall", "crawlers are hammering the site", "set up robots.txt for scrapers", "stop the AI bots", "the site is getting crawled to death", or right after wp-perf-audit shows bot/crawler overload. Approval-gated and per-site: it reviews the block list against THIS site (never blindly blocks a crawler the site relies on), backs up the existing robots.txt first, deploys only on explicit approval, verifies blocked-vs-allowed before/after, and ships a one-line rollback. Do not blanket-deploy the list without reviewing which bots and IPs this specific site can afford to lose.
+description: Deploy a bot firewall (mu-plugin) + robots.txt to an Avista WordPress site whose PHP workers are being saturated by aggressive crawlers hitting uncached Breakdance pages — the fix for the "bots are ~a third of traffic and crawling cold pages" finding from wp-perf-audit. The mu-plugin returns an early 403 to zero-value scrapers / AI-trainers / broken crawlers BEFORE the expensive render (it loads before regular plugins), while leaving Googlebot, bingbot, the WP loopback, cron, admin, REST, admin-ajax, and facebookexternalhit (link previews) untouched; the robots.txt politely tells compliant AI/SEO bots to leave and keeps all crawlers out of expensive query-string / feed / REST URL spaces. Use when the user says "block the bots", "deploy the bot firewall", "crawlers are hammering the site", "set up robots.txt for scrapers", "stop the AI bots", "the site is getting crawled to death", or right after wp-perf-audit shows bot/crawler overload. Approval-gated and per-site — it reviews the block list against THIS site (never blindly blocks a crawler the site relies on), backs up the existing robots.txt first, deploys only on explicit approval, verifies blocked-vs-allowed before/after, and ships a one-line rollback. Do not blanket-deploy the list without reviewing which bots and IPs this specific site can afford to lose.
 ---
 
 # WP bot mitigation — firewall + robots.txt
@@ -20,7 +20,7 @@ This skill deploys code to a live site. Follow the [`avista-wp-prod-ops`](../../
 
 The single most important step, and the one you must not skip. The template's `BLOCK_UA` and `BLOCK_IP` lists are the *audited site's* answer, not a universal one. Blocking a crawler a site depends on will quietly break search visibility or link previews.
 
-Read the site's own access log first (from `wp-perf-audit`, or `bash scripts/…/loganalyze.sh`) and reconcile the template against it:
+Read the site's own access log first (from `wp-perf-audit`'s log stage, which runs its bundled `loganalyze.sh`) and reconcile the template against it:
 
 - **Never block, by design:** `Googlebot`, `bingbot` (SEO), the WP loopback (`WordPress/x.x`), `facebookexternalhit` (Facebook/Messenger/WhatsApp share previews — note this is *distinct* from `meta-externalagent`/`FacebookBot`, which are AI crawlers and *are* blocked). Confirm none of these are in the list you're about to deploy.
 - **Confirm the UA list matches the site's actual offenders.** The template blocks DataForSeoBot, meta-externalagent, Amazonbot, Bytespider, ClaudeBot, anthropic-ai, GPTBot, ChatGPT-User, CCBot, PerplexityBot, PetalBot, DotBot, MJ12bot, SemrushBot, AhrefsBot, ImageSift, TimpiBot, Java-http-client, python-requests, Go-http-client, Scrapy, libwww-perl, "Microsoft Office", and empty-UA front-end hits. If this site's business *uses* one of these (e.g. an SEO team lives in Ahrefs/Semrush dashboards, or a monitoring service uses a generic HTTP-client UA), pull it from the list before deploying.
@@ -42,17 +42,20 @@ Also keep the source of truth in the project's `production-notes/bot-mitigation/
 
 ## Step 3 — Deploy (only after approval)
 
-Edit `templates/avista-bot-firewall.php` to the approved list, then push both files:
+Copy both templates into the project's `production-notes/bot-mitigation/` and edit the copies — never the bundled templates, which belong to the installed plugin (replaced on every update, and reused for the next site). Apply the approved list to the copy of `avista-bot-firewall.php`, then push both copies:
 
 ```bash
+mkdir -p production-notes/bot-mitigation
+cp "${CLAUDE_SKILL_DIR}/templates/avista-bot-firewall.php" "${CLAUDE_SKILL_DIR}/templates/robots.txt" production-notes/bot-mitigation/
+# … edit the copies to the approved list …
 # mu-plugin (create the dir if missing):
 $SSH "mkdir -p ~/site/public_html/wp-content/mu-plugins"
-scp skills/wp-bot-mitigation/templates/avista-bot-firewall.php <user>@<host>:~/site/public_html/wp-content/mu-plugins/avista-bot-firewall.php
+scp production-notes/bot-mitigation/avista-bot-firewall.php <user>@<host>:~/site/public_html/wp-content/mu-plugins/avista-bot-firewall.php
 # robots.txt in the web root (this makes it a physical file, overriding WP's virtual default):
-scp skills/wp-bot-mitigation/templates/robots.txt <user>@<host>:~/site/public_html/robots.txt
+scp production-notes/bot-mitigation/robots.txt <user>@<host>:~/site/public_html/robots.txt
 ```
 
-Update the `Sitemap:` line in `robots.txt` to the site's real sitemap URL, and review the commented site-specific `Disallow` lines (e.g. the IS-slug variant) before pushing.
+In the `robots.txt` copy, update the `Sitemap:` line to the site's real sitemap URL, and review the commented site-specific `Disallow` lines (e.g. the IS-slug variant) before pushing.
 
 ## Step 4 — Verify (before/after)
 
@@ -75,9 +78,10 @@ curl -s "$SITE/robots.txt" | head -20
 Expected: browser & Googlebot 200; blocked UA & empty-UA 403 at ~0.18s (vs a ~3s full render — that gap *is* the recovered worker time); admin-ajax/wp-login reachable. Then measure real-world impact with the bundled script:
 
 ```bash
-# Edit the deploy-time threshold in the script first (it defaults to 11:41 — set it to your
-# actual deploy HH:MM), then:
-scp skills/wp-bot-mitigation/scripts/since_deploy.sh <user>@<host>:~/since_deploy.sh
+# The script hard-codes the deploy time as 11:41 (1141). Set it to your actual deploy HH:MM
+# in a copy — never edit the bundled script — e.g. for a 14:05 deploy:
+sed -e 's/1141/1405/g' -e 's/11:41/14:05/g' "${CLAUDE_SKILL_DIR}/scripts/since_deploy.sh" > /tmp/since_deploy.sh
+scp /tmp/since_deploy.sh <user>@<host>:~/since_deploy.sh
 $SSH "bash ~/since_deploy.sh"   # 403 blocks since deploy, avg 403 time (should be fast), non-403 avg, top blocked UAs
 ```
 

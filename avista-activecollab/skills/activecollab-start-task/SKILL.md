@@ -72,15 +72,15 @@ and logs the hours against the wrong client.
 ## Step 2 — Extract the brief
 
 ```bash
-bash "<this-skill-dir>/scripts/task-to-prompt.sh" 479 13375        # by id
-bash "<this-skill-dir>/scripts/task-to-prompt.sh" 479 --number 25  # by web-UI number
+bash "${CLAUDE_SKILL_DIR}/scripts/task-to-prompt.sh" 479 13375        # by id
+bash "${CLAUDE_SKILL_DIR}/scripts/task-to-prompt.sh" 479 --number 25  # by web-UI number
 ```
 
 The header (name, assignee, estimate, job type, labels, tracked time, URL) goes to **stderr**; the prompt
 itself goes to **stdout**, so it can be redirected on its own:
 
 ```bash
-bash scripts/task-to-prompt.sh 479 13375 > brief.md
+bash "${CLAUDE_SKILL_DIR}/scripts/task-to-prompt.sh" 479 13375 > brief.md
 ```
 
 If the number is not in the open list, the script now checks

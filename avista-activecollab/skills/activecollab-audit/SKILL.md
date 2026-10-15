@@ -44,9 +44,9 @@ Two consequences that matter more than they look:
 ## Step 1 — Resolve the window, and show your working
 
 ```bash
-bash "<this-skill-dir>/scripts/resolve-window.sh" yesterday
-bash "<this-skill-dir>/scripts/resolve-window.sh" week [--trailing]
-bash "<this-skill-dir>/scripts/resolve-window.sh" period
+bash "${CLAUDE_SKILL_DIR}/scripts/resolve-window.sh" yesterday
+bash "${CLAUDE_SKILL_DIR}/scripts/resolve-window.sh" week [--trailing]
+bash "${CLAUDE_SKILL_DIR}/scripts/resolve-window.sh" period
 ```
 
 `yesterday` and `week` are calendar arithmetic and need no confirmation. **`period` does.**
@@ -67,9 +67,9 @@ bash "<this-skill-dir>/scripts/resolve-window.sh" period
 - **END is only ever a proposal.** Put `end_alternatives` to the user as a **selection list**
   (`AskUserQuestion`), recommended first, with each option's reasoning as its description:
 
-  > **Period window** — start is 22 Aug 2026, continuing the run that ended 21 Aug. Which end date?
-  > - **22 Aug – 21 Sep** *(recommended)* — 19 Sep is a Saturday; the cut moves to Monday the 21st
-  > - **22 Aug – 19 Sep** — nominal boundary, ignoring the weekend shift
+  > **Period window** — start is 20 Aug 2026, the billing boundary. Which end date?
+  > - **20 Aug – 21 Sep** *(recommended)* — 20 Sep is a Sunday; the cut moves to Monday the 21st
+  > - **20 Aug – 20 Sep** — nominal boundary, ignoring the weekend shift
   > - *Other* — for when it slips again
 
 ### Which prior runs count as periods
@@ -89,7 +89,7 @@ expected and useful — those records are already posted. Read it before proposi
 ## Step 2 — Measure attention, correctly
 
 ```bash
-bash "<this-skill-dir>/scripts/attention-split.sh" --from … --to …
+bash "${CLAUDE_SKILL_DIR}/scripts/attention-split.sh" --from … --to …
 ```
 
 `session-time.sh` reports **per-directory** totals, and those overlap — two projects open in the same
@@ -121,14 +121,14 @@ every time; never present attention as the window's total.
 ## Step 3 — Read what is logged, from the API
 
 ```bash
-bash "../activecollab-time-audit/scripts/time-logged.sh" --from … --to … --user <id>
+bash "${CLAUDE_PLUGIN_ROOT}/skills/activecollab-time-audit/scripts/time-logged.sh" --from … --to … --user <id>
 ```
 
 `/time-records?from&to` is the only date-windowed endpoint, and it ignores the `user_id` it is given —
 filter client-side. The run log is a receipt, never an authority on how many hours are logged.
 
 For `period`, also check deliberately-trashed records on candidate dates
-(`../activecollab-reconcile-period/scripts/trashed-records.sh`). A date whose duplicate was trashed on
+(`${CLAUDE_PLUGIN_ROOT}/skills/activecollab-reconcile-period/scripts/trashed-records.sh`). A date whose duplicate was trashed on
 purpose looks identical to an unlogged date, and re-posting it charges the client twice.
 
 ## Step 4 — Read the email. This is not optional for `yesterday` and `week`
@@ -173,16 +173,16 @@ record was 1.25h with the cap stated in its own summary.
 One record per sitting, each under its own `record_date`. Round to 0.25h; anything below that floor is
 noise — drop it and record a decision rather than posting a three-minute record.
 
-Post through `../activecollab-log-time/scripts/post-and-verify.sh`, which pre-flights `budget_type` and
+Post through `${CLAUDE_PLUGIN_ROOT}/skills/activecollab-log-time/scripts/post-and-verify.sh`, which pre-flights `budget_type` and
 diffs sent-vs-stored. Then **re-read the window from the API** and report before/after totals from what
 came back — never from the payload sent.
 
 Finally, append the run **with `kind`** and record every judgement call:
 
 ```bash
-bash "../activecollab-reconcile-period/scripts/run-log.sh" append --from … --to … --user … \
+bash "${CLAUDE_PLUGIN_ROOT}/skills/activecollab-reconcile-period/scripts/run-log.sh" append --from … --to … --user … \
   --records 16241,16242 --note "period 2026-08-22..2026-09-21" --kind period
-bash "../activecollab-project-map/scripts/project-map.sh" decide --slug kfum --date 2026-08-24 \
+bash "${CLAUDE_PLUGIN_ROOT}/skills/activecollab-project-map/scripts/project-map.sh" decide --slug kfum --date 2026-08-24 \
   --action never_propose --reason "0.02h fair-share; below the 0.25h floor"
 ```
 

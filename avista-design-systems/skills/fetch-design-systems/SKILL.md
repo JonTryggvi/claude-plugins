@@ -41,8 +41,12 @@ get its id from outside the API:
 
 1. Ask for its share link. The UUID in `https://claude.ai/design/p/<UUID>` **is** the `projectId`.
 2. `get_project` to confirm it resolves and is a design system.
-3. Record it in `references/design-systems.json` so nobody resolves it twice — the file ships with the
-   plugin, so a resolved id benefits everyone who installs it.
+3. Record it so nobody resolves it twice: add the entry to
+   `avista-design-systems/skills/fetch-design-systems/references/design-systems.json` in the claude-plugins
+   source repo and ship it in the next plugin release — that is how a resolved id reaches everyone who
+   installs the plugin. Never write to the installed copy under `${CLAUDE_SKILL_DIR}`: the plugin directory
+   is replaced on every update, so the entry would vanish, and nobody else would see it anyway. If the user
+   isn't working in the source repo, hand them the JSON entry to add.
 
 Say plainly that read-only is not a limitation for branding work — every read the job needs still works.
 Otherwise "read-only" reads as "broken".

@@ -24,10 +24,10 @@ which is the one wrong answer that costs money directly.
 ## Step 1 — Run it
 
 ```bash
-bash "<this-skill-dir>/scripts/invoice-preflight.sh" \
+bash "${CLAUDE_SKILL_DIR}/scripts/invoice-preflight.sh" \
   --from 2026-07-01 --to 2026-07-31 --company 202
 
-bash "<this-skill-dir>/scripts/invoice-preflight.sh" \
+bash "${CLAUDE_SKILL_DIR}/scripts/invoice-preflight.sh" \
   --from 2026-07-01 --to 2026-07-31 --client 'Tækniskólinn' \
   --author jontryggvi@avista.is --author 'Jón Tryggvi'
 ```

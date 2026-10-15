@@ -166,11 +166,14 @@ ssh user@host "echo '$B64' | base64 -d > /tmp/my-snippet.php"
 
 **Step C — install via `wp eval-file` using the bundled `scripts/wpcb-install-snippet.php` template.** Do not hand-author the `hook` / `conditions` / `location` JSON. Clone a known-good row of the same `codeType` and override only the fields you care about (`title`, `code`, `original_code`, `enabled`, `snippet_order`).
 
-The bundled script under `scripts/wpcb-install-snippet.php` is the template. Open it, fill in the four placeholders at the top (`$title`, `$source_path`, `$template_id`, optional `$snippet_order`), then deploy:
+The bundled script under `scripts/wpcb-install-snippet.php` is the template. Copy it to `/tmp` and fill in the four placeholders at the top of the copy (`$title`, `$source_path`, `$template_id`, optional `$snippet_order`) — never edit the bundled template, which belongs to the installed plugin — then deploy:
 
 ```bash
+cp "${CLAUDE_SKILL_DIR}/scripts/wpcb-install-snippet.php" /tmp/wpcb-install.php
+# … fill in the four placeholders in /tmp/wpcb-install.php …
+
 # transport the installer too
-B64=$(base64 < scripts/wpcb-install-snippet.php)
+B64=$(base64 < /tmp/wpcb-install.php)
 ssh user@host "echo '$B64' | base64 -d > /tmp/wpcb-install.php"
 
 # run it
@@ -178,6 +181,7 @@ ssh user@host 'cd <wproot> && wp eval-file /tmp/wpcb-install.php'
 
 # cleanup
 ssh user@host 'rm -f /tmp/wpcb-install.php /tmp/my-snippet.php'
+rm -f /tmp/wpcb-install.php
 ```
 
 The installer is **idempotent on title**: if a row with that title already exists, it prints `EXISTS` and exits without inserting. To force an update, change the script to UPDATE instead of INSERT, or delete the existing row first via `wp db query`.

@@ -32,7 +32,7 @@ period. The scripts resolve the path themselves; do the same in any call you mak
 A reconciliation attributes hours to one person on a real timesheet, so:
 
 ```bash
-bash "<this-skill-dir>/scripts/reconcile-period.sh" \
+bash "${CLAUDE_SKILL_DIR}/scripts/reconcile-period.sh" \
   --from 2026-07-01 --to 2026-07-31 \
   --user 6 \
   --author jontryggvi@avista.is --author 'Jón Tryggvi' --author jontryggvi
@@ -55,8 +55,8 @@ Show that list and have the user confirm which rows are theirs.
 ## Step 1 — Validate the map before measuring
 
 ```bash
-bash "../activecollab-project-map/scripts/project-map.sh" validate
-bash "../activecollab-project-map/scripts/project-map.sh" scan ~/dev ~/flywheel
+bash "${CLAUDE_PLUGIN_ROOT}/skills/activecollab-project-map/scripts/project-map.sh" validate
+bash "${CLAUDE_PLUGIN_ROOT}/skills/activecollab-project-map/scripts/project-map.sh" scan ~/dev ~/flywheel
 ```
 
 A stale map produces confident wrong attribution, which is harder to catch than an error. `validate`
@@ -67,7 +67,7 @@ absent from the reconciliation, and nothing downstream says so.
 ## Step 2 — Run the reconciliation
 
 ```bash
-bash "<this-skill-dir>/scripts/reconcile-period.sh" --from … --to … --user … --author … > recon.json
+bash "${CLAUDE_SKILL_DIR}/scripts/reconcile-period.sh" --from … --to … --user … --author … > recon.json
 ```
 
 One ActiveCollab read for the window, one `git-sittings.sh` run per mapped clone group. JSON on stdout, a
@@ -120,7 +120,7 @@ hour. The session log recorded an event every time anything happened, so it can 
 commit log could only offer a floor.
 
 ```bash
-bash "<this-skill-dir>/scripts/session-time.sh" --from 2026-07-01 --to 2026-07-31 --map ~/.claude/activecollab-project-map.json
+bash "${CLAUDE_SKILL_DIR}/scripts/session-time.sh" --from 2026-07-01 --to 2026-07-31 --map ~/.claude/activecollab-project-map.json
 ```
 
 `reconcile-period.sh` runs this itself; `--no-sessions` turns it off. Where a date measures higher from
@@ -206,7 +206,7 @@ So `trashed-records.sh` takes the ids from `/trash` and probes them against the 
 cannot place is reported, because a deleted record you cannot see is exactly the one that comes back.
 
 ```bash
-bash "<this-skill-dir>/scripts/trashed-records.sh" --map ~/.claude/activecollab-project-map.json \
+bash "${CLAUDE_SKILL_DIR}/scripts/trashed-records.sh" --map ~/.claude/activecollab-project-map.json \
   --from 2026-08-01 --to 2026-08-31
 ```
 
@@ -270,7 +270,7 @@ questions the API cannot: *did a run already cover this window*, and *which reco
 After a posting run, record it:
 
 ```bash
-bash "<this-skill-dir>/scripts/run-log.sh" append --from 2026-08-01 --to 2026-08-31 --user 6 \
+bash "${CLAUDE_SKILL_DIR}/scripts/run-log.sh" append --from 2026-08-01 --to 2026-08-31 --user 6 \
   --records 16301,16302,16303 --decisions 2 --note "month-end 2026-08"
 ```
 
@@ -434,7 +434,7 @@ Hand each approved record to `activecollab-log-time`, which routes through `post
 project's `budget_type` is checked **before** the write and every field is diffed sent-vs-stored after it:
 
 ```bash
-bash "../activecollab-log-time/scripts/post-and-verify.sh" --project 388 --payload rec-01.json --post
+bash "${CLAUDE_PLUGIN_ROOT}/skills/activecollab-log-time/scripts/post-and-verify.sh" --project 388 --payload rec-01.json --post
 ```
 
 That matters here specifically: a reconciliation posts in bulk, and a `not_billable` project silently
@@ -444,7 +444,7 @@ invoice is short.
 Then **record the run**, so a re-run knows this window was already covered:
 
 ```bash
-bash "<this-skill-dir>/scripts/run-log.sh" append --from 2026-08-01 --to 2026-08-31 --user 6 \
+bash "${CLAUDE_SKILL_DIR}/scripts/run-log.sh" append --from 2026-08-01 --to 2026-08-31 --user 6 \
   --records 16301,16302,16303 --note "month-end 2026-08"
 ```
 
@@ -463,7 +463,7 @@ jq -r '.single | "record \(.id): \(.value)h on \(.record_date|todate[:10])  bill
 Then **re-read the period and confirm it moved as expected**:
 
 ```bash
-bash "../activecollab-time-audit/scripts/time-logged.sh" --from 2026-07-01 --to 2026-07-31 --user 6
+bash "${CLAUDE_PLUGIN_ROOT}/skills/activecollab-time-audit/scripts/time-logged.sh" --from 2026-07-01 --to 2026-07-31 --user 6
 ```
 
 Report the before and after totals. Two things this catches that the POST response alone does not: a

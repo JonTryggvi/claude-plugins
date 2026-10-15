@@ -102,8 +102,7 @@ If WPCB isn't available on the site, deploy as an mu-plugin:
 
 ```bash
 ssh user@host 'mkdir -p <wproot>/wp-content/mu-plugins'
-# scp or base64-transport references/wpgb-trp-snippet.php into:
-#   <wproot>/wp-content/mu-plugins/org-wpgb-trp-fix.php
+scp "${CLAUDE_SKILL_DIR}/references/wpgb-trp-snippet.php" user@host:<wproot>/wp-content/mu-plugins/org-wpgb-trp-fix.php
 ```
 
 ### Step 4 — Verify

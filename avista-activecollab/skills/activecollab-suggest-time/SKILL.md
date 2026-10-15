@@ -52,9 +52,9 @@ That last rule is not optional. A confident wrong number on a timesheet becomes 
 ## Step 1 — Measure
 
 ```bash
-bash "<this-skill-dir>/scripts/git-sittings.sh" --since=7.days
-bash "<this-skill-dir>/scripts/git-sittings.sh" main..HEAD          # a feature branch
-bash "<this-skill-dir>/scripts/git-sittings.sh" --since=30.days \
+bash "${CLAUDE_SKILL_DIR}/scripts/git-sittings.sh" --since=7.days
+bash "${CLAUDE_SKILL_DIR}/scripts/git-sittings.sh" main..HEAD          # a feature branch
+bash "${CLAUDE_SKILL_DIR}/scripts/git-sittings.sh" --since=30.days \
   --author jontryggvi@avista.is --author 'Jón Tryggvi' --author jontryggvi
 ```
 
@@ -84,7 +84,7 @@ it.
 `--repo` is repeatable, and commits are deduplicated by full SHA across all the paths given:
 
 ```bash
-bash "<this-skill-dir>/scripts/git-sittings.sh" --since=30.days \
+bash "${CLAUDE_SKILL_DIR}/scripts/git-sittings.sh" --since=30.days \
   --repo ~/dev/myaccount \
   --repo ~/flywheel/idnu/app/public/wp-content/plugins/myaccount \
   --author jontryggvi@avista.is

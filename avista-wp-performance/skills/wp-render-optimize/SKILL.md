@@ -1,6 +1,6 @@
 ---
 name: wp-render-optimize
-description: Deploy the guarded block-theme-overhead removal mu-plugin (avista-render-opt.php) to an Avista WordPress site running a CLASSIC (non-block) theme such as breakdance-zero — WordPress still runs its full FSE global-styles + font-face machinery on classic themes, which is pure dead weight there (~30+ ms plus a WP_Query on the empty wp_global_styles CPT on every front-end render). Use when the user says "remove block-theme overhead", "strip the global-styles", "wp_print_font_faces is slow", "safe render micro-optimization", "trim WP core render", or after wp-perf-audit / php_slow.log shows wp_get_global_settings / wp_print_font_faces / global-styles-inline-css in the render path on a classic-theme site. HARD GUARDED on wp_is_block_theme() === false: the mu-plugin self-guards at runtime AND you must confirm the theme is classic before deploying, because on a real block (FSE) theme these exact callbacks generate the site's actual CSS and removing them strips its styling. Approval-gated — records a one-line rollback and verifies the rendered HTML is byte-identical minus the dead inline CSS, pages still return 200, and no PHP errors. Do not use on a block/FSE theme, and don't oversell it — it is a small, safe micro-opt that compounds with caching and the Breakdance template cuts, not a fix for a 30s page on its own.
+description: Deploy the guarded block-theme-overhead removal mu-plugin (avista-render-opt.php) to an Avista WordPress site running a CLASSIC (non-block) theme such as breakdance-zero — WordPress still runs its full FSE global-styles + font-face machinery on classic themes, which is pure dead weight there (~30+ ms plus a WP_Query on the empty wp_global_styles CPT on every front-end render). Use when the user says "remove block-theme overhead", "strip the global-styles", "wp_print_font_faces is slow", "safe render micro-optimization", "trim WP core render", or after wp-perf-audit / php_slow.log shows wp_get_global_settings / wp_print_font_faces / global-styles-inline-css in the render path on a classic-theme site. HARD GUARDED on wp_is_block_theme() === false — the mu-plugin self-guards at runtime AND you must confirm the theme is classic before deploying, because on a real block (FSE) theme these exact callbacks generate the site's actual CSS and removing them strips its styling. Approval-gated — records a one-line rollback and verifies the rendered HTML is byte-identical minus the dead inline CSS, pages still return 200, and no PHP errors. Do not use on a block/FSE theme, and don't oversell it — it is a small, safe micro-opt that compounds with caching and the Breakdance template cuts, not a fix for a 30s page on its own.
 ---
 
 # WP render optimization — remove block-theme overhead (classic themes only)
@@ -40,7 +40,7 @@ There's nothing to back up (this is a new mu-plugin, not an overwrite — confir
 
 ```bash
 $SSH "mkdir -p ~/site/public_html/wp-content/mu-plugins"
-scp skills/wp-render-optimize/templates/avista-render-opt.php <user>@<host>:~/site/public_html/wp-content/mu-plugins/avista-render-opt.php
+scp "${CLAUDE_SKILL_DIR}/templates/avista-render-opt.php" <user>@<host>:~/site/public_html/wp-content/mu-plugins/avista-render-opt.php
 ```
 
 ## Step 3 — Verify output is identical minus the dead CSS

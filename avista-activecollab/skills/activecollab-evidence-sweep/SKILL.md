@@ -58,7 +58,7 @@ even when they would make the evidence more convincing.
 ## Step 1 — Narrow the window to the days worth asking about
 
 ```bash
-bash "<this-skill-dir>/scripts/gap-dates.sh" --from 2026-07-01 --to 2026-07-31 \
+bash "${CLAUDE_SKILL_DIR}/scripts/gap-dates.sh" --from 2026-07-01 --to 2026-07-31 \
   --user 6 --author jontryggvi@avista.is --author 'Jón Tryggvi'
 ```
 

@@ -132,7 +132,7 @@ system's Google Font, which is precisely the part that makes the output look bra
 `--virtual-time-budget` gives the webfont time to load before printing; without it you get a silent fallback
 to Helvetica. The path **must** be an absolute `file://` URL.
 
-`scripts/render.sh <input.html> <output.pdf>` wraps this — it locates Chrome across the usual install
+`bash "${CLAUDE_SKILL_DIR}/scripts/render.sh" <input.html> <output.pdf>` wraps this — it locates Chrome across the usual install
 paths, renders, and verifies. Prefer it over hand-rolling the command.
 
 **Read `references/render-notes.md` before writing the HTML.** It covers the print-specific traps that

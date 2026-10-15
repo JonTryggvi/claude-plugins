@@ -1,6 +1,6 @@
 ---
 name: activecollab-create-task
-description: Create a task in Avista's ActiveCollab and assign it to a colleague — resolves the project, assignee, and task list from names to IDs, then writes the description to match what the task is for: a runnable prompt in a magic callout for work that has not started, or a short past-tense summary for work already finished that just needs somewhere to hang a time record. Sets estimate, due date and labels, and posts only after showing the user exactly what will be created. Use when the user says "create a task in ActiveCollab", "add a task for <person>", "assign this to <person> in ActiveCollab", "make an AC task", "add this to the <project> project", "put a prompt in the task description", "set an estimate on that task", "the work is done, create a task for it", "make a task so I can log this time against it", "create a task for the hours I just spent", or describes work that should become a ticket. Also handles updating an existing task's assignee, estimate, or due date. Writes into a shared system other people see, so it never posts without explicit approval.
+description: Create a task in Avista's ActiveCollab and assign it to a colleague — resolves the project, assignee, and task list from names to IDs, then writes the description to match what the task is for — a runnable prompt in a magic callout for work that has not started, or a short past-tense summary for work already finished that just needs somewhere to hang a time record. Sets estimate, due date and labels, and posts only after showing the user exactly what will be created. Use when the user says "create a task in ActiveCollab", "add a task for <person>", "assign this to <person> in ActiveCollab", "make an AC task", "add this to the <project> project", "put a prompt in the task description", "set an estimate on that task", "the work is done, create a task for it", "make a task so I can log this time against it", "create a task for the hours I just spent", or describes work that should become a ticket. Also handles updating an existing task's assignee, estimate, or due date. Writes into a shared system other people see, so it never posts without explicit approval.
 ---
 
 # Create an ActiveCollab task
@@ -157,7 +157,7 @@ Steps:
 Then wrap it with the helper, which handles the container markup and the escaping:
 
 ```bash
-CONTAINER=magic bash "<this-skill-dir>/scripts/prompt-to-body.sh" \
+CONTAINER=magic bash "${CLAUDE_SKILL_DIR}/scripts/prompt-to-body.sh" \
   prompt.md "Prompt for this task — paste into Claude Code:" > /tmp/body.html
 
 jq -n --arg n "$NAME" --rawfile b /tmp/body.html \
@@ -204,7 +204,7 @@ write to a file: the `LC_CTYPE` trap applies to every call, and a summary of Ice
 where multibyte characters turn up.
 
 ```bash
-CONTAINER=plain bash "<this-skill-dir>/scripts/prompt-to-body.sh" summary.txt > /tmp/body.html
+CONTAINER=plain bash "${CLAUDE_SKILL_DIR}/scripts/prompt-to-body.sh" summary.txt > /tmp/body.html
 
 jq -n --arg n "$NAME" --rawfile b /tmp/body.html \
   '{name:$n, body:$b, assignee_id:6, task_list_id:1082}' > /tmp/payload.json

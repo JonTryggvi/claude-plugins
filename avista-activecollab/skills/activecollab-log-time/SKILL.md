@@ -115,10 +115,10 @@ Both halves matter, and the script does both:
 
 ```bash
 # pre-flight only — writes nothing, and that is the default
-bash "<this-skill-dir>/scripts/post-and-verify.sh" --project 154 --payload rec.json
+bash "${CLAUDE_SKILL_DIR}/scripts/post-and-verify.sh" --project 154 --payload rec.json
 
 # after the user approves: write, re-read, and diff sent against stored
-bash "<this-skill-dir>/scripts/post-and-verify.sh" --project 154 --payload rec.json --post
+bash "${CLAUDE_SKILL_DIR}/scripts/post-and-verify.sh" --project 154 --payload rec.json --post
 ```
 
 Writing needs `--post` explicitly. Pre-flight is the default because this touches a real timesheet, and an

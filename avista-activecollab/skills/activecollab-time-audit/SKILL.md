@@ -63,9 +63,9 @@ Redirect to a file. The scripts here already do.
 ## Step 1 — Read what is logged
 
 ```bash
-bash "<this-skill-dir>/scripts/time-logged.sh" --from 2026-06-01 --to 2026-08-21
-bash "<this-skill-dir>/scripts/time-logged.sh" --from 2026-06-01 --to 2026-08-21 --project 479
-bash "<this-skill-dir>/scripts/time-logged.sh" --from 2026-06-01 --to 2026-08-21 --user 6 --quiet > logged.json
+bash "${CLAUDE_SKILL_DIR}/scripts/time-logged.sh" --from 2026-06-01 --to 2026-08-21
+bash "${CLAUDE_SKILL_DIR}/scripts/time-logged.sh" --from 2026-06-01 --to 2026-08-21 --project 479
+bash "${CLAUDE_SKILL_DIR}/scripts/time-logged.sh" --from 2026-06-01 --to 2026-08-21 --user 6 --quiet > logged.json
 ```
 
 One API call for the window, then everything filtered and aggregated locally. JSON on stdout, a summary on
@@ -158,7 +158,7 @@ first field may be a comma-separated list of paths holding the same commits:
 ```
 
 ```bash
-bash "<this-skill-dir>/scripts/logging-gap.sh" \
+bash "${CLAUDE_SKILL_DIR}/scripts/logging-gap.sh" \
   --from 2026-06-01 --to 2026-08-21 --pairs pairs.tsv \
   --user 6 --author jontryggvi@avista.is --author 'Jón Tryggvi' --author jontryggvi
 ```

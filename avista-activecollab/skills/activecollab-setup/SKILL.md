@@ -80,7 +80,7 @@ password field yourself; the script consumes it without exposing it.
 ## Step 4 — Bootstrap
 
 ```bash
-bash "<this-skill-dir>/scripts/ac-bootstrap.sh" "op://<Vault>/<login-item-id>" "https://active.avista.is"
+bash "${CLAUDE_SKILL_DIR}/scripts/ac-bootstrap.sh" "op://<Vault>/<login-item-id>" "https://active.avista.is"
 ```
 
 It verifies the host really is ActiveCollab, exchanges the password for a token, writes

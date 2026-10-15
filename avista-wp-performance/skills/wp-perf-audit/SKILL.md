@@ -80,8 +80,8 @@ This is where "36% of traffic is bots crawling uncached pages" gets proven. Two 
 
 ```bash
 # copy up and run (scripts cd to ~/site/logs themselves):
-scp skills/wp-perf-audit/scripts/loganalyze.sh  <user>@<host>:~/loganalyze.sh
-scp skills/wp-perf-audit/scripts/loganalyze2.sh <user>@<host>:~/loganalyze2.sh
+scp "${CLAUDE_SKILL_DIR}/scripts/loganalyze.sh"  <user>@<host>:~/loganalyze.sh
+scp "${CLAUDE_SKILL_DIR}/scripts/loganalyze2.sh" <user>@<host>:~/loganalyze2.sh
 $SSH "bash ~/loganalyze.sh"    # window, aggregate, bot %, HIT rate, status codes, top IPs by TOTAL request-time, deep/looping paths
 $SSH "bash ~/loganalyze2.sh"   # hourly volume + slow(>10s), profiles of the worst IPs, 499s by UA, php_slow top-of-stack, WAF
 ```

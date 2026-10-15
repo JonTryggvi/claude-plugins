@@ -79,8 +79,9 @@ Add this design system: https://claude.ai/design/p/0632251e-f4fd-4411-8251-3f673
 the failure is quiet — a short, confident list that omits the system the user is looking straight at. Access
 and enumeration are separate: every read method works on such a system when addressed directly by
 `projectId`. There's no API that lists them, so the id comes from a share link
-(`claude.ai/design/p/<UUID>`) and gets recorded in `references/design-systems.json`, which ships with the
-plugin so nobody resolves it twice.
+(`claude.ai/design/p/<UUID>`) and gets added to `references/design-systems.json` in the plugin's source
+repo, then shipped in the next release so nobody resolves it twice (never written into the installed copy,
+which every update replaces).
 
 **Token files are laid out two different ways.** Some systems put everything in one file
 (`colors_and_type.css`); others use an *import barrel* where `styles.css` is nothing but `@import` lines and

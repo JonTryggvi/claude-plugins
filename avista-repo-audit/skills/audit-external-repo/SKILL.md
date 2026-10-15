@@ -66,10 +66,10 @@ The scanner ships beside this skill at `scripts/scan.sh`. It sweeps all nine pha
 and emits structured, greppable findings. It executes nothing in the target.
 
 ```bash
-bash "<this-skill-dir>/scripts/scan.sh" "$QUARANTINE" | tee /tmp/repo-audit-scan.txt
+bash "${CLAUDE_SKILL_DIR}/scripts/scan.sh" "$QUARANTINE" | tee /tmp/repo-audit-scan.txt
 ```
 
-Raise coverage with `SCAN_MAX=200 bash …/scan.sh "$QUARANTINE"` when a probe truncates and you need every hit.
+Raise coverage with `SCAN_MAX=200 bash "${CLAUDE_SKILL_DIR}/scripts/scan.sh" "$QUARANTINE"` when a probe truncates and you need every hit.
 If the tree contains committed `node_modules/`, `vendor/`, or `dist/` (the scanner flags this in Phase 1),
 a payload can hide inside it — re-scan those subtrees explicitly, since the default run prunes them for signal.
 

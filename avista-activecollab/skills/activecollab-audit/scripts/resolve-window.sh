@@ -133,7 +133,7 @@ case "$MODE" in
     ;;
 
   period)
-    # ---- START: the day after the last PERIOD run, never computed if one exists
+    # ---- START: the NOMINAL_DAY of last month; the last PERIOD run is only a check
     PREV_END=""; PREV_AT=""
     if [ -s "$RUN_LOG" ]; then
       PREV=$(jq -rs --argjson min "$MIN_PERIOD_DAYS" '

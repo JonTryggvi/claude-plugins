@@ -20,7 +20,7 @@ Follow the [`avista-wp-prod-ops`](../../../avista-wp-prod-ops/) posture even tho
 ## Step 1 — Record current state, then enable
 
 ```bash
-scp skills/wp-breakdance-render-profile/scripts/bd_debug.php <user>@<host>:~/bd_debug.php
+scp "${CLAUDE_SKILL_DIR}/scripts/bd_debug.php" <user>@<host>:~/bd_debug.php
 $SSH "cd ~/site/public_html && wp eval-file ~/bd_debug.php"        # prints current value — note it (should be false)
 $SSH "cd ~/site/public_html && wp eval-file ~/bd_debug.php on"     # enable; confirms 'enable_render_performance_debug = true'
 ```

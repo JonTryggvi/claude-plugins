@@ -62,11 +62,11 @@ re-litigates last month from memory and re-proposes work somebody already decide
 So record them structurally:
 
 ```bash
-bash "<this-skill-dir>/scripts/project-map.sh" decide \
+bash "${CLAUDE_SKILL_DIR}/scripts/project-map.sh" decide \
   --slug fraktlausnir --date 2026-08-12 --action never_propose \
   --reason "already inside record 16112 of 2026-08-13, which itemises it"
 
-bash "<this-skill-dir>/scripts/project-map.sh" decide \
+bash "${CLAUDE_SKILL_DIR}/scripts/project-map.sh" decide \
   --slug fraktlausnir --date 2026-08-19 --action capped_at --hours 2.40 \
   --reason "logged 2.40h against 3.00h measured, reviewed and left"
 ```
@@ -109,8 +109,8 @@ unsure whether hours really cover the work, that is a question for the user, not
 ## Step 1 — Find out what is not mapped yet
 
 ```bash
-bash "<this-skill-dir>/scripts/project-map.sh" scan ~/dev ~/flywheel ~/Dropbox/dev
-bash "<this-skill-dir>/scripts/project-map.sh" scan --since 2026-07-21 ~/dev ~/flywheel
+bash "${CLAUDE_SKILL_DIR}/scripts/project-map.sh" scan ~/dev ~/flywheel ~/Dropbox/dev
+bash "${CLAUDE_SKILL_DIR}/scripts/project-map.sh" scan --since 2026-07-21 ~/dev ~/flywheel
 ```
 
 `scan` walks the given roots for git repos, groups them by **remote origin URL**, and reports each group as
@@ -158,8 +158,8 @@ clone group is worse than an unrecorded one, because it measures without complai
 ## Step 2 — Resolve a project for each unmapped group
 
 ```bash
-bash "<this-skill-dir>/scripts/project-map.sh" projects            # all of them
-bash "<this-skill-dir>/scripts/project-map.sh" projects 'idnu|iðnú' # filtered
+bash "${CLAUDE_SKILL_DIR}/scripts/project-map.sh" projects            # all of them
+bash "${CLAUDE_SKILL_DIR}/scripts/project-map.sh" projects 'idnu|iðnú' # filtered
 ```
 
 This uses `GETALL`, and that is not a detail. `/projects` caps at **100 per page** and this instance has
@@ -174,7 +174,7 @@ because it is now written down, it keeps doing so every month until someone noti
 ## Step 3 — Pick a default task, including the archived ones
 
 ```bash
-bash "<this-skill-dir>/scripts/project-map.sh" tasks 428
+bash "${CLAUDE_SKILL_DIR}/scripts/project-map.sh" tasks 428
 ```
 
 This merges the **open** list with `/projects/<id>/tasks/archive` and labels each row with its source.
@@ -209,7 +209,7 @@ cat > /tmp/entry.json <<'J'
 {"slug":"chess","repos":["/Users/me/dev/chess"],"private":true,
  "note":"personal project, no client, never billed — do not ask again"}
 J
-bash "<this-skill-dir>/scripts/project-map.sh" put /tmp/entry.json
+bash "${CLAUDE_SKILL_DIR}/scripts/project-map.sh" put /tmp/entry.json
 ```
 
 Without this, every run surfaces the same repos as unmapped work and asks about them again. Asking twice is
@@ -223,8 +223,8 @@ is billable, that is not private; leave it unmapped and ask.
 ## Step 5 — Store it, and show the user first
 
 ```bash
-bash "<this-skill-dir>/scripts/project-map.sh" put /tmp/entry.json
-bash "<this-skill-dir>/scripts/project-map.sh" list
+bash "${CLAUDE_SKILL_DIR}/scripts/project-map.sh" put /tmp/entry.json
+bash "${CLAUDE_SKILL_DIR}/scripts/project-map.sh" list
 ```
 
 `put` replaces any entry with the same `slug` and validates the shape. Show the resolved names in plain
@@ -244,7 +244,7 @@ repos       : 2 paths (clone group)
 ## Step 6 — Keep it honest
 
 ```bash
-bash "<this-skill-dir>/scripts/project-map.sh" validate
+bash "${CLAUDE_SKILL_DIR}/scripts/project-map.sh" validate
 ```
 
 A cached mapping decays. `validate` checks every stored entry against the live instance and reports:
