@@ -17,7 +17,7 @@ It joins three sources into one site map:
 | Skill | Status | What it does |
 |---|---|---|
 | [`fleet-setup`](../fleet-setup/) | Built | Checks the API key, runs the **API key test**, reads the CRM's customer ↔ site links, maps SSH hosts, writes `~/.claude/avista-wp-fleet/sites.json`. Read-only. |
-| `fleet-inventory` | Planned | WP/PHP versions and plugins per site; which of our plugins are installed where. Read-only. |
+| [`fleet-inventory`](../fleet-inventory/) | Built | WP version, plugins and themes for every Hub site, with a report on where our plugins run and which versions are in use. Read-only. |
 | `fleet-rollout` | Planned | Install or update one of our plugins across chosen sites: staging, then one canary, then batches. Backup, change and check per site; stops on the first failure. |
 | `fleet-drift` | Planned | Scheduled report: outdated plugins, missing standard plugins, sites without a recent backup. |
 

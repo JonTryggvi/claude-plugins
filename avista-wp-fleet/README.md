@@ -8,7 +8,7 @@ Hub id, customer and SSH host, and (planned) staged rollouts of our own plugins 
 | Skill | Status |
 |---|---|
 | `fleet-setup` | Built: API key test, CRM customer ↔ site links, SSH host map, joined `sites.json` |
-| `fleet-inventory` | Planned |
+| `fleet-inventory` | Built: every site's WP version, plugins and themes, plus a report on our plugins |
 | `fleet-rollout` | Planned |
 | `fleet-drift` | Planned |
 
