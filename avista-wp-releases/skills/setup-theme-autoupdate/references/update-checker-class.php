@@ -64,7 +64,47 @@ final class __THEME_PASCAL___Theme_UpdateChecker {
                 } else {
                     $vcs_api->enableReleaseAssets( $name_regex );
                 }
+
+                // Update channel. Stable unless this site's wp-config.php says,
+                // exactly: define( 'AVISTA_UPDATE_CHANNEL', 'beta' );
+                // Explicit opt-in only, never inferred from the environment type
+                // or the domain. On the beta channel, read the newest releases
+                // with pre-releases included; only X.Y.Z and X.Y.Z-beta.N tags
+                // count. See the plugin skill's conventions.md → "Update channels".
+                $beta = defined( 'AVISTA_UPDATE_CHANNEL' ) && AVISTA_UPDATE_CHANNEL === 'beta';
+                if ( $beta && method_exists( $vcs_api, 'setReleaseFilter' ) && defined( "$api_class::RELEASE_FILTER_ALL" ) ) {
+                    $vcs_api->setReleaseFilter(
+                        static fn( $version ): bool => preg_match( '/^\d+(\.\d+)*(-beta\.\d+)?$/', (string) $version ) === 1,
+                        constant( "$api_class::RELEASE_FILTER_ALL" ),
+                        10
+                    );
+                }
+
+                // Update from a GitHub Release or not at all: drop PUC's tag and
+                // branch fallbacks, which serve GitHub's source zip (no vendor/)
+                // and pick -beta tags. See the plugin skill's conventions.md →
+                // "Release or nothing".
+                if ( method_exists( $checker, 'getUniqueName' ) ) {
+                    $keep = defined( "$api_class::STRATEGY_LATEST_RELEASE" )
+                        ? constant( "$api_class::STRATEGY_LATEST_RELEASE" )
+                        : 'latest_release';
+                    add_filter(
+                        $checker->getUniqueName( 'vcs_update_detection_strategies' ),
+                        static fn( $strategies ): array => is_array( $strategies ) ? array_intersect_key( $strategies, [ $keep => true ] ) : []
+                    );
+                }
             }
+        }
+
+        // Themes only: when no release qualifies, PUC's theme checker does not
+        // stop the way the plugin checker does. It reads style.css from the
+        // configured branch ('master') and can return an "update" with a
+        // version and no download URL. Drop it rather than show an update that
+        // cannot be applied. See conventions.md → "No release means no update".
+        if ( method_exists( $checker, 'addResultFilter' ) ) {
+            $checker->addResultFilter( static function ( $update ) {
+                return ( is_object( $update ) && empty( $update->download_url ) ) ? null : $update;
+            } );
         }
     }
 }

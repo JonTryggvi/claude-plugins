@@ -6,8 +6,8 @@ Avista's WordPress release pipeline for plugins *and* themes, packaged as a Clau
 |---|---|
 | `setup-plugin-autoupdate` | Wires GitHub Releases + plugin-update-checker (PUC v5) into a new WordPress plugin. Drops in the bootstrap class, the Actions workflow, the Composer dependency, and the conventions. |
 | `setup-theme-autoupdate` | Same pipeline for a WordPress theme. Different version source (`style.css`), different PUC arguments (`get_stylesheet_directory()`), different release zip naming (`<theme-slug>.zip`), no brand-icon injection. |
-| `release-plugin` | Ships a new version of a plugin that already has the pipeline wired up. Bumps the header version in the main plugin file, prepares the `gsend` commit, walks through creating the GitHub release, verifies the workflow attached `<plugin>-v<VER>.zip`. |
-| `release-theme` | Ships a new version of a theme. Bumps `style.css`, prepares the `gsend` commit, walks through the release, verifies `<theme-slug>.zip` was attached. |
+| `release-plugin` | Ships a new version of a plugin that already has the pipeline wired up. It bumps the header version and commits, then creates the release as a pre-release. It marks the release Latest only after the attached `<plugin>-v<VER>.zip` passes the regex, sha256 and contents checks. Also cuts `-beta.N` pre-releases for staging. |
+| `release-theme` | Ships a new version of a theme, with the same pre-release-first flow and beta mode. Bumps `style.css` and verifies `<theme-slug>.zip`. |
 
 Plus an `avista-wp-releases-overview` skill — run `/avista-wp-releases-overview` (or just ask "what does this plugin do?") to print this summary, the recommended order, and prerequisites in-session.
 
@@ -28,6 +28,9 @@ Avista ships WordPress plugins and themes to Icelandic clients through a consist
 - Release artifact asserted installable in CI (contains the entrypoint **and** `vendor/autoload.php`) before it is uploaded — a zip missing the autoloader permanently disables the updater on every site it reaches.
 - Bootstrap class guards `vendor/autoload.php` with `file_exists()` and PUC usage with `class_exists`/`method_exists` so the plugin or theme loads cleanly in dev without `composer install`.
 - Release zip matched by a specific regex so PUC ignores GitHub's auto-generated source archives and only picks up the CI-built artifact.
+- PUC limited to GitHub Releases. A `vcs_update_detection_strategies` filter drops its tag and branch fallbacks. Those fallbacks ignore the asset regex, serve source zips without `vendor/`, and pick `-beta` tags whenever `/releases/latest` comes back empty.
+- An opt-in beta channel: `define( 'AVISTA_UPDATE_CHANNEL', 'beta' );` in a staging site's `wp-config.php` makes it accept `-beta.N` pre-releases. Every other site stays on stable.
+- Releases are created as pre-releases and marked Latest only after their zip is verified, so no stable site ever sees a Latest release without its zip. With WPMU DEV Hub Automate on "update all", Latest means a fleet-wide rollout within about a week.
 - `vendor/` is git-ignored; only ever compiled by Actions at release time.
 - Env-gated `admin_notices` warning for a missing `vendor/` (plugin only; theme variant shows it always).
 - Commits use `gsend` (the Avista convention) rather than direct `git commit`.

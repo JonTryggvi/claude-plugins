@@ -142,6 +142,166 @@ auto-generated source archive for repo `Avista-Core` at tag `2.0.0` is
 Handle un-prefixed tags in the **workflow** by normalising the tag
 (`VER="${RELEASE_TAG#v}"`), never by loosening the regex.
 
+## Release or nothing — drop PUC's tag and branch fallbacks
+
+```php
+if ( method_exists( $checker, 'getUniqueName' ) ) {
+    $keep = defined( "$api_class::STRATEGY_LATEST_RELEASE" )
+        ? constant( "$api_class::STRATEGY_LATEST_RELEASE" )
+        : 'latest_release';
+    add_filter(
+        $checker->getUniqueName( 'vcs_update_detection_strategies' ),
+        static fn( $strategies ): array => is_array( $strategies ) ? array_intersect_key( $strategies, [ $keep => true ] ) : []
+    );
+}
+```
+
+**Why.** The regex and `REQUIRE_RELEASE_ASSETS` above only govern *one* of
+the ways PUC finds an update. Read in PUC v5.7
+(`Puc/v5p7/Vcs/GitHubApi.php`, `Vcs/Api.php`): for branch `master` or `main`,
+which is what you get without `setBranch()`,
+`getUpdateDetectionStrategies()` returns three strategies in order, and
+`Api::chooseReference()` takes the first one that returns anything:
+
+1. `latest_release`: `getLatestRelease()` → `/releases/latest`. Never a
+   pre-release, and the asset rule applies.
+2. `latest_tag`: `getLatestTag()` → the highest version-looking tag.
+   `looksLikeVersion()` accepts suffixes, so `v0.25.0-beta.1` outranks
+   `v0.24.1`. Its download URL is the tag's `zipball_url` (GitHub's source
+   archive, no `vendor/`), and **the release-asset rule is never applied.**
+3. `branch`: the branch itself, again as a source archive.
+
+`getLatestRelease()` returns `null`, and the fallbacks run, whenever:
+
+- the API call fails. That covers a rate limit or a network error. Shared
+  WPMU DEV hosting puts many sites behind one IP, and anonymous GitHub API
+  calls are capped at 60 an hour per IP.
+- `REQUIRE_RELEASE_ASSETS` is set and no asset matches yet. That is the window
+  between publishing a release and CI attaching the zip.
+
+A harness driving the real v5.7 `chooseReference()` with canned GitHub
+responses (2026-10-20) showed the result. Without the filter, a stable site
+was offered `v0.25.0-beta.1`'s **source zipball** in three cases: on a rate
+limit, on a release whose zip wasn't attached yet, and on a beta published
+without `--prerelease`. With the filter, all three gave no update, and the
+healthy case still gave the stable asset.
+
+Implementation notes:
+
+- The filter name comes from `$checker->getUniqueName()`, not a literal. PUC
+  builds it as `puc_vcs_update_detection_strategies-<slug>` for plugins and
+  `puc_vcs_update_detection_strategies_theme-<slug>` for themes, and the
+  method gets that suffix right in both.
+- The kept key is read off the runtime class (`STRATEGY_LATEST_RELEASE` is
+  `'latest_release'` in v5.7), for the same reason `REQUIRE_RELEASE_ASSETS`
+  is. If a future PUC renamed the strategy, the intersection would come back
+  empty and updates would stop. That fails closed, never open.
+- If `getUniqueName()` is missing, the filter isn't added and PUC behaves
+  as it did before. That only happens on a PUC that isn't v5.
+
+## Update channels — stable by default, beta by explicit opt-in
+
+```php
+$beta = defined( 'AVISTA_UPDATE_CHANNEL' ) && AVISTA_UPDATE_CHANNEL === 'beta';
+```
+
+Every site is on the **stable** channel: `/releases/latest` only, so
+pre-releases never reach it. A site joins the **beta** channel only through
+this line in its own `wp-config.php`:
+
+```php
+define( 'AVISTA_UPDATE_CHANNEL', 'beta' );
+```
+
+One constant name serves every Avista plugin and theme, so a staging site that
+sets it gets betas of everything that ships this code. Any other value (`'Beta'`,
+`true`, `'staging'`) is stable.
+
+**Never infer the channel** from `wp_get_environment_type()`, the domain, or a
+`staging` in the URL. Those are exactly what a cloned or misconfigured
+production site gets wrong, and the failure has to land on stable.
+
+On the beta channel the bootstrap changes two things:
+
+1. **The release filter.** `setReleaseFilter( $cb, RELEASE_FILTER_ALL, 10 )`
+   makes `getLatestRelease()` read `/releases?per_page=10` instead of
+   `/releases/latest`. It walks that list newest-first, skips drafts, and
+   takes the first release whose version passes `$cb`, which accepts only
+   `X.Y.Z` and `X.Y.Z-beta.N`. That release is then subject to the asset rule
+   as usual. If its zip isn't attached yet, the lookup returns `null`, and the
+   strategy filter makes that "no update" rather than a fallback.
+2. **The asset regex** also accepts `-beta.N`:
+   `/<slug>-v[\d.]+(-beta\.\d+)?\.zip(…)/i`. The stable pattern
+   `/<slug>-v[\d.]+\.zip(…)/i` does not match `<slug>-v0.25.0-beta.1.zip`. So
+   even a beta published *without* `--prerelease`, which GitHub may then make
+   Latest, finds no matching asset on a stable site and is ignored. Do not
+   share one widened regex across both channels; that second line of defence
+   would be lost.
+
+Still true on both channels: only the CI-built asset is ever installed, the
+version comes from the remote plugin header at that tag (which outranks the tag
+name), and PUC offers an update only when `version_compare( remote, installed,
+'>' )` holds.
+
+### Version ordering (verified with PHP's `version_compare`)
+
+| Installed | Offered | Result |
+|---|---|---|
+| `0.24.1` | `0.25.0-beta.1` | update (beta channel only) |
+| `0.25.0-beta.1` | `0.24.2` (stable hotfix) | **no update**: `0.24.2` is lower |
+| `0.25.0-beta.1` | `0.25.0-beta.2` | update |
+| `0.25.0-beta.9` | `0.25.0-beta.10` | update (numeric compare) |
+| `0.25.0-beta.2` | `0.25.0` | update: the final outranks every beta of it |
+
+A beta site therefore stays on its beta through any stable hotfix of the
+previous line. It moves on only at the final `0.25.0` or a later beta.
+
+The beta channel takes the **newest-created** qualifying release in GitHub's
+list order, not the highest version. So a stable hotfix published *after* a beta
+masks that beta from beta-channel sites that are still on stable. Those sites get
+the hotfix, and the beta stays hidden until the next beta is cut. Sites already
+on the beta are unaffected, because the hotfix is lower.
+
+### Leaving the beta channel
+
+1. Remove the constant from `wp-config.php`.
+2. Clear PUC's cached result, so an already-fetched beta offer can't be applied
+   (or auto-applied by WPMU DEV Hub Automate) before the next check:
+   `wp option delete external_updates-<slug>` for each Avista plugin, or click
+   **Check for updates** on each plugin row.
+3. The site **keeps the beta it has installed**. It is not downgraded, and
+   it moves on only when a stable release higher than that beta ships.
+4. To go back down now, force-install the Latest zip:
+   `gh release download <latest-tag> -R <owner>/<repo> -p '*.zip'`, then
+   `wp plugin install <zip> --force` (see `release-plugin` Step 9).
+
+### WPMU DEV staging pushes may carry the constant to production
+
+Pushing staging to production may copy `wp-config.php`, and with it
+`AVISTA_UPDATE_CHANNEL`, onto the live site. Checked against WPMU DEV's
+docs on 2026-10-20: *Hosting → Staging* (last updated 2026-10-12) and
+*Unlimited Hosting → Staging*. Neither page mentions `wp-config.php`
+in its push description, either as included or as excluded. The dedicated
+hosting page defines a **Files** push as moving everything visible over SFTP
+or in the Hub's Manage Files, "including core WordPress files, themes,
+plugins & media". `wp-config.php` sits in that tree. **Treat it as
+riding along** until WPMU DEV support confirms otherwise:
+
+- After every staging → production push from a beta-channel staging site, run
+  `wp config get AVISTA_UPDATE_CHANNEL` on **production**. It must fail with
+  "not defined". If it is defined, `wp config delete AVISTA_UPDATE_CHANNEL`,
+  then follow "Leaving the beta channel" above.
+- **Sync production to Staging** overwrites every staging file, so the
+  constant can vanish from staging. Re-check it after a sync.
+
+### Betas from more than one branch
+
+There is one beta channel per plugin, not one per feature. If branch A ships
+`0.26.0-beta.1` and branch B then ships `0.26.0-beta.2`, every beta site moves to
+B, and A's work disappears from those sites unless B contains it. Betas are not
+cumulative. Merge parallel features into one integration branch before cutting
+betas from it, or take turns.
+
 ## Fail closed cuts both ways — mind the naming-change cliff
 
 `REQUIRE_RELEASE_ASSETS` makes a regex miss fail closed, which is the behaviour we

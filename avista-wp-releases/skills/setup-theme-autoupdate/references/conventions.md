@@ -11,6 +11,8 @@ These conventions apply identically to themes. See the plugin skill's `conventio
 - **`class_exists()` on the factory after autoload** — defends against partial composer installs.
 - **`method_exists()` around `getVcsApi()` and `enableReleaseAssets()`** — future-proofs against PUC API changes between minor versions.
 - **`REQUIRE_RELEASE_ASSETS` + specific zip regex** — prevents PUC from grabbing GitHub's auto-generated source archive, which would brick the theme by not including `vendor/`.
+- **Release or nothing** — the strategy filter keeps only `latest_release`. PUC's tag and branch fallbacks serve a source zip, and the tag fallback picks `-beta` tags. Theme PUC uses the same `Vcs\Api::chooseReference()` as plugins. The filter is `puc_vcs_update_detection_strategies_theme-<slug>`, so take the name from `$checker->getUniqueName()` and never write it out by hand.
+- **Update channels** — stable by default; `define( 'AVISTA_UPDATE_CHANNEL', 'beta' );` in a site's `wp-config.php` opts it into pre-releases. Version ordering, leaving the channel, and the WPMU DEV staging-push check are the same as for plugins. For themes, the cached state to clear when leaving is `puc_external_updates_theme-<slug>`, not `external_updates-<slug>`.
 - **`BOOT_FLAG` constant guard** — defends against double-initialization. Critical for themes because a child theme can also load the parent's `functions.php`, which would otherwise register two PUC checkers racing against the same option keys.
 - **Init priority 30** — late enough that other init-time setups have run.
 - **Env-gated `admin_notices`** — *not* env-gated in the theme version (see divergence below).
@@ -32,6 +34,31 @@ The asymmetry exists because themes are typically installed by their slug being 
 The regex in the PUC config follows the zip name: `/<theme-slug>\.zip($|[?&#])/i`.
 
 **This static name is safe here, unlike a permissive plugin regex.** GitHub's auto-generated source archive is `<Repo>-<version>.zip` (e.g. `Islandiamagica-1.4.0.zip`), and the anchored `\.zip` immediately after the slug means it cannot match — there is no version segment for it to slip into. Do not "improve" this into `/<theme-slug>-v?[\d.]+\.zip/i`; the `v?` would match GitHub's archive, which ships no `vendor/` and would brick the theme on a one-click update.
+
+### No release means no update — the theme checker does not stop by itself
+
+The plugin checker returns `null` when no strategy finds a release
+(`Vcs\PluginUpdateChecker::requestInfo()`). The theme checker does not.
+`Vcs\ThemeUpdateChecker::requestUpdate()` in v5.7 falls back to the configured
+branch (`master` without `setBranch()`), reads `style.css` there, and builds an
+update from its `Version:` header with **no download URL**. On a repo without a
+`master` branch that read 404s and nothing is offered. On a repo with one, WP
+shows an update that cannot be applied, and an auto-update fails with "Update
+package not available".
+
+The bootstrap adds a result filter that returns `null` for any update without a
+`download_url`. Keep it alongside the strategy filter: with the tag and branch
+strategies gone, this fallback is the only path left.
+
+### The beta channel has no asset-name defence for themes
+
+Plugins version their asset (`<slug>-v0.25.0-beta.1.zip`), so the stable
+channel's regex refuses a beta's zip even if the beta was published as Latest by
+mistake. Theme assets are unversioned (`<theme-slug>.zip`) for the reason
+below, so betas and finals share one name. On the stable channel the only guard
+is that `/releases/latest` never returns a pre-release, which makes
+`--prerelease` on a beta non-negotiable. `release-theme`'s beta mode asserts it
+after publishing.
 
 ### No brand-icon injection
 

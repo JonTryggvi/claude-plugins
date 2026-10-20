@@ -1,6 +1,6 @@
 ---
 name: setup-plugin-autoupdate
-description: Wire GitHub Releases + plugin-update-checker (PUC v5) into an Avista WordPress plugin so installs receive one-click updates from tagged releases. Use when the user says "set up auto-updates", "wire up PUC", "scaffold the autoupdater", "add the release workflow", "make this plugin auto-update", "give this plugin the regluvordur release pipeline", or when adding GitHub-Release-based updates to a new WordPress plugin. Do not use for theme update workflows or for plugins that update through the WordPress.org repository.
+description: Wire GitHub Releases + plugin-update-checker (PUC v5) into an Avista WordPress plugin so installs receive one-click updates from tagged releases. Use when the user says "set up auto-updates", "wire up PUC", "scaffold the autoupdater", "add the release workflow", "make this plugin auto-update", "give this plugin the regluvordur release pipeline", or when adding GitHub-Release-based updates to a new WordPress plugin. Also use it to retrofit an existing updater, e.g. "lock the updater to releases", "stop betas reaching the updater", "add the beta channel", "retrofit the PUC updater". Do not use for theme update workflows or for plugins that update through the WordPress.org repository.
 ---
 
 # Set up the auto-update pipeline
@@ -9,7 +9,7 @@ Wire GitHub Releases + plugin-update-checker (PUC) into a WordPress plugin so in
 
 The skill produces four edits to the target plugin:
 
-1. A `{{PluginPascal}}_Update_Checker` class added to the main plugin file (bootstrap that registers the PUC checker, sets auth, restricts asset matching, and replaces WP's default icon with the plugin's brand mark).
+1. A `{{PluginPascal}}_Update_Checker` class added to the main plugin file. The bootstrap registers the PUC checker, sets auth, restricts asset matching, and limits PUC to GitHub Releases only (no tag or branch fallback). It also adds the opt-in beta channel and replaces WP's default icon with the plugin's brand mark.
 2. A `.github/workflows/release.yml` that builds a `vendor/`-bundled zip on release publish and attaches it to the release.
 3. A Composer `require` for `yahnis-elsts/plugin-update-checker:^5.6`.
 4. A version constant derived from the plugin header, and a `.gitignore` entry for `vendor/`.
@@ -20,7 +20,7 @@ Use this skill when the user is asking to add Avista's standard auto-update pipe
 
 - The plugin is going to be distributed through WordPress.org (use the .org update mechanism instead).
 - The target is a WordPress *theme* — themes have their own scaffolding (out of scope for this skill).
-- The plugin already has PUC wired up (in which case suggest `release-plugin` if they want to ship a version).
+- The plugin already has PUC wired up. Suggest `release-plugin` if they want to ship a version, or [Retrofit an existing updater](#retrofit-an-existing-updater) if its updater lacks the release-only filter.
 
 ## Workflow
 
@@ -31,7 +31,7 @@ Execute these steps in order. Pause at the confirmation step before writing.
 Read the target plugin's main file (`<plugin-folder>/<plugin-slug>.php`) and confirm:
 
 - It has a valid plugin header (`Plugin Name:`, `Version:`, etc.).
-- It does *not* already define a `*_Update_Checker` class or call `PucFactory::buildUpdateChecker()`. If it does, stop and tell the user the pipeline appears wired already.
+- It does *not* already define a `*_Update_Checker` class or call `PucFactory::buildUpdateChecker()`. If it does, stop and tell the user the pipeline appears wired already. If that updater has no `vcs_update_detection_strategies` filter, offer the [retrofit](#retrofit-an-existing-updater) instead.
 - The plugin is in a git repo with a GitHub remote (`git remote -v` from the plugin folder, or check `composer.json`'s `repository` field). The skill needs the GitHub `owner/repo` to bake into the bootstrap class.
 
 If any prerequisite is missing, ask the user before continuing.
@@ -118,9 +118,10 @@ After writing, report to the user:
   1. Run `composer install` locally so the bootstrap class can find `vendor/autoload.php` during dev.
   2. Add brand assets if desired (`assets/img/icon.svg`, `assets/img/banner.svg`) — the bootstrap class references these but degrades gracefully if missing.
   3. Optionally add `define( 'GITHUB_TOKEN', 'ghp_...' );` to `wp-config.php` to raise the GitHub API rate limit from 60 to 5000 requests/hour for the update checks.
-  4. Commit the changes (the user runs `gsend "Add GitHub-Release auto-updater (PUC v5)"`). Workflow files must go over git-over-SSH, not the REST contents API — see Step 4.2.
-  5. Push to `main`.
-  6. Create the first release: `gh release create v0.1.0 --title "v0.1.0" --notes "Initial release with auto-updater wired"` (or via the GitHub web UI). Once the release is published, the workflow builds the zip, asserts it contains both the plugin entrypoint and `vendor/autoload.php`, and attaches it as `__RELEASE_ASSET_SLUG__-v0.1.0.zip`.
+  4. Production stays on the stable channel. Only a staging site that should receive betas gets `define( 'AVISTA_UPDATE_CHANNEL', 'beta' );` in its `wp-config.php`. See `references/conventions.md` → "Update channels".
+  5. Commit the changes (the user runs `gsend "Add GitHub-Release auto-updater (PUC v5)"`). Workflow files must go over git-over-SSH, not the REST contents API — see Step 4.2.
+  6. Push to `main`.
+  7. Create the first release: `gh release create v0.1.0 --title "v0.1.0" --notes "Initial release with auto-updater wired"` (or via the GitHub web UI). Once the release is published, the workflow builds the zip, asserts it contains both the plugin entrypoint and `vendor/autoload.php`, and attaches it as `__RELEASE_ASSET_SLUG__-v0.1.0.zip`.
 
 Then confirm the updater actually registered — this pipeline's characteristic failure is being wired up wrong and saying nothing at all. On an installed site:
 
@@ -132,14 +133,25 @@ If that prints `false`, `vendor/` never made it onto the site. If it prints `tru
 
 Mention the `release-plugin` skill for shipping subsequent versions.
 
+## Retrofit an existing updater
+
+Plugins wired before this skill gained the release-only filter, and hand-rolled updaters, need the same protection. `references/retrofit.md` has the exact block to swap in, how to find each plugin's updater class (ACMA and Avista Core use `includes/Support/Updater.php`; ERP Onboarding uses `includes/class-update-checker.php`), and the checks before and after release.
+
+Patch one plugin per session, only with the owner's go for that plugin, and ship it through `release-plugin`. Until the patched release has reached the fleet, do not publish a beta tag that outranks the plugin's Latest release. Old code's tag fallback would hand that beta's source zip to stable sites.
+
 ## Conventions
 
 The bootstrap class encodes several non-obvious guards. Each exists for a specific reason — do not strip them when adapting the template. See `references/conventions.md` for the full list with the reasoning behind each one.
 
 **The one rule to not get wrong:** never hardcode a `v5pN` PUC namespace. The Composer constraint `^5.6` floats — it resolves to `v5p7` today — so a pinned `v5p6` reference stops resolving on the next minor. Use the `v5` alias for the factory, and resolve `REQUIRE_RELEASE_ASSETS` off `get_class( $api )` because that constant is not exposed through the alias. Getting the factory wrong disables updates **silently**; getting the constant wrong is a **fatal error**. Both are in `references/conventions.md` → "Never hardcode a `v5pN` namespace".
 
+**The second one:** updates come from a GitHub Release or not at all. The asset regex and `REQUIRE_RELEASE_ASSETS` govern only PUC's first strategy, `/releases/latest`. Whenever that comes back empty, PUC falls back to the highest version-looking tag and then to the branch. That happens on a rate limit, a network error, or a release whose zip CI hasn't attached yet. Both fallbacks serve GitHub's source zip with no `vendor/`, and the tag fallback ranks `v0.25.0-beta.1` above `v0.24.1`. With WPMU DEV Hub Automate on "update all" across much of the fleet, whatever PUC offers gets installed. The bootstrap therefore filters PUC's strategy list (`puc_vcs_update_detection_strategies-<slug>`) down to `latest_release`.
+
+Betas reach a site only through the explicit `AVISTA_UPDATE_CHANNEL` opt-in. On that beta channel the release lookup includes pre-releases, and the asset regex accepts `-beta.N`. Never infer the channel from the environment type or the domain. See `references/conventions.md` → "Release or nothing" and "Update channels".
+
 ## Templates bundled
 
 - `references/update-checker-class.php` — the PUC bootstrap class with placeholders.
 - `references/release-workflow.yml` — the GitHub Actions workflow.
-- `references/conventions.md` — non-obvious guards and their reasoning.
+- `references/conventions.md` — non-obvious guards and their reasoning, including the update channels.
+- `references/retrofit.md` — the drop-in block for an updater that already exists.

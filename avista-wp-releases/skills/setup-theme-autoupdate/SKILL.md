@@ -1,6 +1,6 @@
 ---
 name: setup-theme-autoupdate
-description: Wire GitHub Releases + plugin-update-checker (PUC v5) into an Avista WordPress theme so installs receive one-click updates from tagged releases. Use when the user says "set up theme auto-updates", "wire up PUC for this theme", "scaffold the theme autoupdater", "add the theme release workflow", "make this theme auto-update", or when adding GitHub-Release-based updates to a WordPress theme. Do not use for WordPress plugins — those have their own skill (setup-plugin-autoupdate) with different version sources and PUC arguments.
+description: Wire GitHub Releases + plugin-update-checker (PUC v5) into an Avista WordPress theme so installs receive one-click updates from tagged releases. Use when the user says "set up theme auto-updates", "wire up PUC for this theme", "scaffold the theme autoupdater", "add the theme release workflow", "make this theme auto-update", or when adding GitHub-Release-based updates to a WordPress theme. Also use it to retrofit a theme's existing updater, e.g. "lock the theme updater to releases", "add the beta channel to this theme". Do not use for WordPress plugins — those have their own skill (setup-plugin-autoupdate) with different version sources and PUC arguments.
 ---
 
 # Set up the theme auto-update pipeline
@@ -9,7 +9,7 @@ Wire GitHub Releases + plugin-update-checker into a WordPress theme so installs 
 
 The skill produces three edits to the target theme:
 
-1. A `{{ThemePascal}}_Theme_UpdateChecker` class added to `functions.php` (bootstrap that registers PUC, sets auth, restricts asset matching).
+1. A `{{ThemePascal}}_Theme_UpdateChecker` class added to `functions.php`. The bootstrap registers PUC, sets auth, and restricts asset matching. It limits PUC to GitHub Releases only (no tag or branch fallback, no package-less update) and adds the opt-in beta channel.
 2. A `.github/workflows/release-theme.yml` that builds a `vendor/`-bundled zip on release publish and attaches it.
 3. A Composer `require` for `yahnis-elsts/plugin-update-checker:^5.6`.
 
@@ -19,7 +19,7 @@ Use this skill when the user is asking to add Avista's auto-update pipeline to a
 
 - The target is a WordPress *plugin* — use `setup-plugin-autoupdate` instead.
 - The theme will be distributed through WordPress.org (use the .org update mechanism instead).
-- The theme already has PUC wired up (suggest `release-theme` if they want to ship a version).
+- The theme already has PUC wired up. Suggest `release-theme` if they want to ship a version, or [Retrofit an existing updater](#retrofit-an-existing-updater) if its bootstrap lacks the `vcs_update_detection_strategies` filter.
 - The theme is a *child theme* with the parent already handling updates.
 
 ## Workflow
@@ -93,10 +93,15 @@ Report files created and the manual next steps:
 
 1. Run `composer install` locally so PUC resolves during dev.
 2. Optionally add `define( 'GITHUB_TOKEN', 'ghp_...' );` to `wp-config.php` for the rate-limit raise (60 → 5000 req/hr).
+   Production stays on the stable channel. Only a staging site that should receive betas gets `define( 'AVISTA_UPDATE_CHANNEL', 'beta' );`.
 3. The user runs `gsend "Add GitHub-Release auto-updater (PUC v5)"` to commit and push. Workflow files must be committed over git-over-SSH — writing `.github/workflows/` through the GitHub REST contents API needs the `workflow` token scope, which the Avista org account lacks, and the API returns a misleading `404` rather than a `403`.
 4. Create the first release: `gh release create v0.1.0 --title "v0.1.0" --notes "Initial release with auto-updater wired"`. Actions builds the zip and attaches it as `__THEME_SLUG__.zip`.
 
 Mention the `release-theme` skill for shipping subsequent versions.
+
+## Retrofit an existing updater
+
+For a theme wired before the release-only filter existed, copy three blocks from `references/update-checker-class.php`. The channel-and-release-filter block and the strategy-filter block go right after `enableReleaseAssets()`, inside the same `getVcsApi()` guard. The package-less result filter goes after that guard. The theme regex stays as it is. The ground rules are the plugin skill's `references/retrofit.md`: one theme per session with the owner's go, ship through `release-theme`, and publish no beta tag that outranks Latest until the patched release has reached the fleet.
 
 ## Conventions
 

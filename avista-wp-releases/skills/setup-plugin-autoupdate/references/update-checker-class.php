@@ -77,12 +77,25 @@ final class __PLUGIN_PASCAL___Update_Checker {
         if ( method_exists( $checker, 'getVcsApi' ) ) {
             $api = $checker->getVcsApi();
             if ( is_object( $api ) && method_exists( $api, 'enableReleaseAssets' ) ) {
+                // Update channel. Stable unless this site's wp-config.php says,
+                // exactly: define( 'AVISTA_UPDATE_CHANNEL', 'beta' );
+                // Explicit opt-in only, never inferred from the environment type
+                // or the domain: a misconfigured site must land on stable.
+                // See conventions.md → "Update channels".
+                $beta = defined( 'AVISTA_UPDATE_CHANNEL' ) && AVISTA_UPDATE_CHANNEL === 'beta';
+
                 // Match only our CI-built, versioned asset. The literal `v` is
                 // load-bearing: GitHub's auto-generated source archive for repo
                 // `Avista-Core` at tag 2.0.0 is `Avista-Core-2.0.0.zip`, which a
                 // permissive `v?` would match — and it ships no vendor/, so an
                 // update from it bricks the plugin.
-                $name_regex = '/__RELEASE_ASSET_SLUG__-v[\d.]+\.zip($|[?&#])/i';
+                //
+                // A beta's asset is <slug>-vX.Y.Z-beta.N.zip, and only the beta
+                // channel's pattern accepts it. A beta published as Latest by
+                // mistake therefore has no matching asset on a stable site.
+                $name_regex = $beta
+                    ? '/__RELEASE_ASSET_SLUG__-v[\d.]+(-beta\.\d+)?\.zip($|[?&#])/i'
+                    : '/__RELEASE_ASSET_SLUG__-v[\d.]+\.zip($|[?&#])/i';
 
                 // Resolve REQUIRE_RELEASE_ASSETS off the *runtime* class. The
                 // constant lives on the concrete v5pN\Vcs\Api and is NOT exposed
@@ -93,6 +106,36 @@ final class __PLUGIN_PASCAL___Update_Checker {
                     $api->enableReleaseAssets( $name_regex, constant( "$api_class::REQUIRE_RELEASE_ASSETS" ) );
                 } else {
                     $api->enableReleaseAssets( $name_regex );
+                }
+
+                // Beta channel: read the newest releases with pre-releases
+                // included, instead of /releases/latest (which never returns a
+                // pre-release). Only X.Y.Z and X.Y.Z-beta.N tags count. PUC still
+                // offers a release only when it is higher than the installed
+                // version, and still only its CI-built asset.
+                if ( $beta && method_exists( $api, 'setReleaseFilter' ) && defined( "$api_class::RELEASE_FILTER_ALL" ) ) {
+                    $api->setReleaseFilter(
+                        static fn( $version ): bool => preg_match( '/^\d+(\.\d+)*(-beta\.\d+)?$/', (string) $version ) === 1,
+                        constant( "$api_class::RELEASE_FILTER_ALL" ),
+                        10
+                    );
+                }
+
+                // Update from a GitHub Release or not at all. When the release
+                // lookup comes back empty (a rate limit, or a release whose zip
+                // CI has not attached yet), PUC falls back to the highest
+                // version-looking tag, then to the branch. Both serve GitHub's
+                // source zip with no vendor/, and the tag fallback skips the
+                // asset rule and ranks v0.25.0-beta.1 above v0.24.1. Keep only
+                // the release strategy. See conventions.md → "Release or nothing".
+                if ( method_exists( $checker, 'getUniqueName' ) ) {
+                    $keep = defined( "$api_class::STRATEGY_LATEST_RELEASE" )
+                        ? constant( "$api_class::STRATEGY_LATEST_RELEASE" )
+                        : 'latest_release';
+                    add_filter(
+                        $checker->getUniqueName( 'vcs_update_detection_strategies' ),
+                        static fn( $strategies ): array => is_array( $strategies ) ? array_intersect_key( $strategies, [ $keep => true ] ) : []
+                    );
                 }
             }
         }
