@@ -238,7 +238,9 @@ ssh <ssh-target> "cd <wp-root> && wp eval '
   if ( class_exists( \"\\Hummingbird\\Core\\Utils\" ) ) {
     foreach ( [ \"page_cache\", \"minify\", \"critical_css\" ] as \$mod ) {
       \$m = \\Hummingbird\\Core\\Utils::get_module( \$mod );
-      if ( is_object( \$m ) && method_exists( \$m, \"clear_cache\" ) ) { \$m->clear_cache(); }
+      if ( ! is_object( \$m ) || ! method_exists( \$m, \"clear_cache\" ) ) { continue; }
+      // minify: pass false. HB 4.0 defaults reset_settings=true, which wipes the AO settings.
+      \$mod === \"minify\" ? \$m->clear_cache( false ) : \$m->clear_cache();
     }
   }
   // Host edge cache. Platform-provided on WPMU DEV hosting only — always guard.
@@ -252,6 +254,8 @@ ssh <ssh-target> "cd <wp-root> && wp eval '
 ```
 
 - **Always guard `wpmudev_hosting_purge_static_cache()` with `function_exists()`.** The function belongs to the hosting platform, not to any site — WPMU DEV defines it in a platform mu-plugin outside the site root (`/var/web/plugins/mu-plugins/misc-functions.php`). It issues an nginx `PURGE` to the site's own origin (127.0.0.1) and defaults to `/*` (purge everything, optional path argument). It does not exist off WPMU DEV hosting, and the platform can remove it — a bare call fatals the deploy. WPMU DEV's own Dashboard plugin calls it with exactly this guard.
+- **Never call the minify module's `clear_cache()` without `false`.** Hummingbird 4.0.0's signature is `clear_cache( $reset_settings = true, $reset_minify = true, $keep_collection = false )`: the bare call resets every Asset Optimization setting (`dont_minify`, `dont_combine`, `block`, `position`, `defer`, `inline`, `fonts`, `preload`, `async`) and empties the sources collection. That is a production settings change, not a cache clear — the 2026-11-03 ACMA deploys ran it four times on rmk and innbak. `clear_cache( false )` deletes the files only.
+- **The asset CDN keeps the old bundle.** HB names a combined bundle after its handles, not its contents, so a CSS release keeps the same bundle URL, and the WPMU DEV asset CDN (`*.assetcdn.net`) keeps serving the old file under it (`cdn-cache: HIT`) — the page then renders new markup with old CSS (rmk, 2026-11-03). There is no CDN purge to call from `wp eval`. The reliable clear is Hummingbird admin → **Asset Optimization → clear cache**. When verifying, fetch the bundle URL the page actually links and check its contents; some sites print `<link href='…'>` with single quotes, so grep for both quote styles — match `href=["']`, not `href="`.
 - **Caveat (verified twice):** calling `clear_cache()` on the HB modules via `wp eval` reports success but does NOT delete the critical-CSS `*-used.css` files (some observed 3 months old afterward). Only Hummingbird's admin **Asset Optimization → clear cache** actually regenerated the bundles. After a CSS-affecting deploy, tell the user to clear Asset Optimization from the HB admin as well — do not promise the `wp eval` clear is sufficient.
 
 **5. Verify the update — on disk AND on the front end.**
