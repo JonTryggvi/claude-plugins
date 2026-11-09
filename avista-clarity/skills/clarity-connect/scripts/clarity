@@ -1,18 +1,23 @@
 #!/usr/bin/env python3
 """clarity: a small client for Avista Clarity (clarity.avista.is).
 
-Clarity has no API tokens. Owners log in with email and password and get a
-30-day session cookie. `clarity login` does that exchange once, in the user's
-own terminal, and stores only the cookie in ~/.claude/.env as CLARITY_SESSION
-(mode 0600). The password is read from the terminal or from 1Password, sent
-once over stdin to curl, and never written, echoed or passed as an argument.
+Two ways to authenticate, both stored in ~/.claude/.env (mode 0600):
 
-Every request goes through curl with its config on stdin, so the session
-cookie never appears in a process listing either. curl rather than urllib
+- CLARITY_TOKEN, a personal API token made on Clarity's Users page. It doesn't
+  expire and is sent as `Authorization: Bearer <token>`. `clarity login
+  --token` reads it from the terminal (or 1Password), checks it, and saves it.
+- CLARITY_SESSION, the 30-day `clarity_sid` cookie from an email and password
+  login. Used only when no token is set, so existing setups keep working.
+
+The password or token is read from the terminal or from 1Password, sent over
+stdin to curl, and never echoed or passed as an argument.
+
+Every request goes through curl with its config on stdin, so the token and
+session cookie never appear in a process listing either. curl rather than urllib
 because the stock macOS python3 often has no CA bundle; curl uses the
 system keychain.
 
-Exit codes: 0 ok, 2 usage, 3 not logged in or session expired,
+Exit codes: 0 ok, 2 usage, 3 not logged in, session expired or token revoked,
 4 API error, 5 network error.
 """
 
@@ -119,13 +124,33 @@ def session_token():
     return os.environ.get("CLARITY_SESSION") or read_env().get("CLARITY_SESSION")
 
 
+def api_token():
+    return os.environ.get("CLARITY_TOKEN") or read_env().get("CLARITY_TOKEN")
+
+
+def credentials():
+    """("token", value), ("session", value), or (None, None).
+
+    A token wins when both are set: it doesn't expire, and Clarity checks a
+    bearer token on its own without looking at any cookie.
+    """
+    token = api_token()
+    if token:
+        return "token", token
+    session = session_token()
+    if session:
+        return "session", session
+    return None, None
+
+
 # ---------- http ----------
 
 def _quote(value):
     return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
-def curl(method, url, body=None, cookie=None, include_headers=False, accept="application/json"):
+def curl(method, url, body=None, cookie=None, bearer=None, include_headers=False,
+         accept="application/json"):
     """Run one request through curl, with every argument on stdin.
 
     Returns (status, headers_text, body_text).
@@ -143,7 +168,9 @@ def curl(method, url, body=None, cookie=None, include_headers=False, accept="app
     ]
     if include_headers:
         cfg.append("include")
-    if cookie:
+    if bearer:
+        cfg.append("header = %s" % _quote("Authorization: Bearer %s" % bearer))
+    elif cookie:
         cfg.append("header = %s" % _quote("Cookie: %s=%s" % (SESSION_COOKIE, cookie)))
     if body is not None:
         cfg.append("header = %s" % _quote("Content-Type: application/json"))
@@ -171,14 +198,22 @@ def curl(method, url, body=None, cookie=None, include_headers=False, accept="app
 
 
 def api(method, path, payload=None, allow=()):
-    token = session_token()
-    if not token:
-        raise CliError("not logged in to Clarity. Run: ~/.claude/bin/clarity login", 3)
+    kind, value = credentials()
+    if not kind:
+        raise CliError("not logged in to Clarity. Run: ~/.claude/bin/clarity login --token", 3)
     body = json.dumps(payload) if payload is not None else None
-    status, _, text = curl(method, base_url() + path, body=body, cookie=token)
+    if kind == "token":
+        status, _, text = curl(method, base_url() + path, body=body, bearer=value)
+    else:
+        status, _, text = curl(method, base_url() + path, body=body, cookie=value)
     if status == 401:
+        if kind == "token":
+            raise CliError(
+                "Clarity rejected CLARITY_TOKEN (revoked, or made on another Clarity). "
+                "Make a new one on the Users page, then run: ~/.claude/bin/clarity login --token", 3
+            )
         raise CliError(
-            "Clarity session expired or revoked. Run: ~/.claude/bin/clarity login", 3
+            "Clarity session expired or revoked. Run: ~/.claude/bin/clarity login --token", 3
         )
     try:
         data = json.loads(text) if text.strip() else {}
@@ -443,8 +478,48 @@ def collect_from_url(site, with_titles=False, title_limit=60):
 
 # ---------- commands ----------
 
+def _login_token(args, url):
+    if args.op:
+        ref = args.op.rstrip("/")
+        try:
+            token = subprocess.run(["op", "read", ref + "/credential"], capture_output=True,
+                                   text=True, check=True, stdin=subprocess.DEVNULL).stdout.strip()
+        except (OSError, subprocess.CalledProcessError):
+            raise CliError("could not read the token from 1Password (%s/credential). Is the desktop "
+                           "app unlocked, with Settings > Developer > Integrate with 1Password CLI "
+                           "on?" % ref, 2)
+    else:
+        if not sys.stdin.isatty():
+            raise CliError("run this in your own terminal, it asks for the token", 2)
+        token = getpass.getpass("Clarity API token (not shown): ").strip()
+    if not token:
+        raise CliError("no token given. Make one on the Users page: %s/users" % url, 2)
+    if not token.startswith("clr_"):
+        raise CliError("that isn't a Clarity API token (they start with clr_)", 2)
+
+    status, _, text = curl("GET", url + "/api/me", bearer=token)
+    if status == 401:
+        raise CliError("Clarity rejected that token. It may be revoked, or made on another "
+                       "Clarity than %s" % url, 3)
+    if status != 200:
+        raise CliError("token check failed with HTTP %s: %s" % (status, text[:300]))
+    updates = {"CLARITY_TOKEN": token}
+    token = None
+    if url != DEFAULT_URL or "CLARITY_URL" not in read_env():
+        updates["CLARITY_URL"] = url
+    write_env(updates)
+    user = json.loads(text).get("user", {})
+    print("Token works on %s for %s <%s>." % (url, user.get("name", "?"), user.get("email", "?")))
+    print("Saved to ~/.claude/.env as CLARITY_TOKEN. It doesn't expire; revoke it on the Users page.")
+    if session_token():
+        print("CLARITY_SESSION is still stored but no longer used. `clarity logout` clears both.")
+    return 0
+
+
 def cmd_login(args):
     url = base_url()
+    if args.token:
+        return _login_token(args, url)
     if args.op:
         ref = args.op.rstrip("/")
         try:
@@ -494,25 +569,35 @@ def cmd_login(args):
     user = json.loads(text).get("user", {})
     print("Logged in to %s as %s <%s>." % (url, user.get("name", "?"), user.get("email", "?")))
     print("Session saved to ~/.claude/.env as CLARITY_SESSION. It lasts 30 days.")
+    print("To skip the monthly login, make an API token on the Users page and run: "
+          "~/.claude/bin/clarity login --token")
     return 0
 
 
 def cmd_logout(args):
-    token = session_token()
-    if token:
+    session = session_token()
+    if session:
         try:
-            curl("POST", base_url() + "/api/auth/logout", body="{}", cookie=token)
+            curl("POST", base_url() + "/api/auth/logout", body="{}", cookie=session)
         except CliError:
             pass
-    write_env({"CLARITY_SESSION": None})
-    print("Logged out. CLARITY_SESSION removed from ~/.claude/.env.")
+    had_token = "CLARITY_TOKEN" in read_env()
+    write_env({"CLARITY_SESSION": None, "CLARITY_TOKEN": None})
+    print("Logged out. CLARITY_SESSION and CLARITY_TOKEN removed from ~/.claude/.env.")
+    if had_token:
+        # The client can't revoke it: the server never says which token is which.
+        print("The token itself still works until you revoke it on the Users page: %s/users"
+              % base_url())
+    if os.environ.get("CLARITY_TOKEN") or os.environ.get("CLARITY_SESSION"):
+        print("CLARITY_TOKEN or CLARITY_SESSION is also set in your shell environment; unset it there.")
     return 0
 
 
 def cmd_whoami(args):
     _, data = api("GET", "/api/me")
     user = data.get("user") or {}
-    emit({"url": base_url(), "name": user.get("name"), "email": user.get("email")})
+    emit({"url": base_url(), "name": user.get("name"), "email": user.get("email"),
+          "auth": credentials()[0]})
     return 0
 
 
@@ -696,13 +781,16 @@ def main(argv=None):
     ap = argparse.ArgumentParser(prog="clarity", description="Avista Clarity client")
     sub = ap.add_subparsers(dest="cmd")
 
-    p = sub.add_parser("login", help="log in once and store the session (run in your own terminal)")
+    p = sub.add_parser("login", help="store an API token or a session (run in your own terminal)")
+    p.add_argument("--token", action="store_true",
+                   help="store a personal API token from the Users page instead of logging in")
     p.add_argument("--email")
-    p.add_argument("--op", metavar="op://Vault/Item", help="read username and password from 1Password")
+    p.add_argument("--op", metavar="op://Vault/Item",
+                   help="read username and password (or, with --token, the credential field) from 1Password")
     p.set_defaults(fn=cmd_login)
 
-    sub.add_parser("logout", help="end the session and forget it").set_defaults(fn=cmd_logout)
-    sub.add_parser("whoami", help="check the stored session").set_defaults(fn=cmd_whoami)
+    sub.add_parser("logout", help="end the session and forget it and any token").set_defaults(fn=cmd_logout)
+    sub.add_parser("whoami", help="check the stored token or session").set_defaults(fn=cmd_whoami)
 
     p = sub.add_parser("projects", help="list projects")
     p.add_argument("--all", action="store_true", help="include archived")

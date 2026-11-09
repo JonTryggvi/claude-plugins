@@ -1,6 +1,6 @@
 ---
 name: avista-clarity-overview
-description: Overview of the avista-clarity plugin: what it does, the one-time login, and how connecting and pushing a project to Clarity works. Use when the user asks "what does avista-clarity do", "how do I get a site into Clarity", "what's in this plugin", or right after installing it.
+description: Overview of the avista-clarity plugin: what it does, the one-time token setup, and how connecting and pushing a project to Clarity works. Use when the user asks "what does avista-clarity do", "how do I get a site into Clarity", "what's in this plugin", or right after installing it.
 ---
 
 # avista-clarity
@@ -18,9 +18,10 @@ share link for pinned comments.
 
 ## What happens when you say "connect this to Clarity"
 
-1. **Login check.** Clarity has no API tokens, so the first time (and every 30 days) you run
-   `~/.claude/bin/clarity login` in your own terminal. Your password is never stored or shown to
-   Claude; only the session lands in `~/.claude/.env`.
+1. **Login check.** The first time, you make a personal API token on Clarity's Users page and run
+   `~/.claude/bin/clarity login --token` in your own terminal. The token lands in `~/.claude/.env`,
+   never in chat, and doesn't expire until you revoke it. (The older password login still works but
+   lasts 30 days.)
 2. **Live URL.** Clarity reviews a URL, so the site must be up. A static HTML folder that isn't live
    yet gets a private repo in the Avista GitHub org and a Cloudflare deploy first, after you confirm.
 3. **Find or create.** Claude looks for an existing project with the same URL before making one, so
