@@ -70,6 +70,11 @@
       "name": "avista-clarity",
       "source": "./avista-clarity",
       "description": "Connect projects to Avista Clarity (clarity.avista.is) and push their pages there for client review. Finds an existing project by URL before creating one, links the repo with a committed .clarity.json so the whole team lands on the same project, and syncs the page list from the folder's HTML and sitemap or from the live site's sitemap, following the WordPress sitemap indexes that Clarity's own 30-page crawler skips. Sync is a dry run first, adds and unhides pages, never deletes, and only hides pages that vanished after the user agrees, so pinned comments stay reachable. Static HTML folders that aren't live yet get a private Avista GitHub repo and a Cloudflare Worker deploy, with the .assetsignore that keeps .git off the public site. Clarity has no API tokens, so a one-time login in the user's own terminal stores a 30-day session cookie in ~/.claude/.env; the password is never stored, echoed, passed as a process argument or seen by Claude."
+    },
+    {
+      "name": "avista-mail",
+      "source": "./avista-mail",
+      "description": "Email for Claude in Avista's Gmail, with links that stay real. The Gmail connector's create_draft, update_draft, reply and forward rewrite every link into an expiring google.com/url?q= redirect before saving the draft, and no input format gets past it; this plugin writes drafts through the Gmail API instead. A standard-library script creates, updates and threads reply drafts, appends the Gmail signature, and reads the stored draft back to confirm no wrapped links. It never sends. One-time setup per person: an OAuth Desktop client and a browser sign-in, with the refresh token kept in ~/.claude/.env and never printed."
     }
   ]
 }

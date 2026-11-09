@@ -12,6 +12,7 @@ Source code for the Claude plugins Avista distributes through its organization m
 | [`avista-wpgb-trp-fix/`](avista-wpgb-trp-fix/) | Fix the recurring bug where WP Grid Builder facets and pagination return the default language on TranslatePress sites. Ships a transport-aware filter pair plus a ready-to-deploy PHP snippet. |
 | [`avista-memory-tools/`](avista-memory-tools/) | Maintenance tools for the agent-instructions, memory, and git-hygiene layers — CLAUDE.md bootstrap, CLAUDE.md audit, memory store linter, pre-push sync check, skill-bundle release workflow. |
 | [`avista-clarity/`](avista-clarity/) | Connect projects to Avista Clarity and push their pages for client review. Finds or creates the project by URL, links the repo with `.clarity.json`, syncs pages from the folder or the live sitemap, and deploys static sites to Cloudflare first when they aren't live. |
+| [`avista-mail/`](avista-mail/) | Gmail drafts and replies through the Gmail API so links stay real — the connector rewrites every link to a `google.com/url?q=` redirect. |
 
 ## Working in this repo
 
