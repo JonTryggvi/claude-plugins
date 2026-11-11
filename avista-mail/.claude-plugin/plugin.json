@@ -1,6 +1,6 @@
 {
   "name": "avista-mail",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Email for Claude in Avista's Gmail, with links that stay real. The Gmail connector's create_draft, update_draft, reply and forward rewrite every link into an expiring google.com/url?q= redirect before saving the draft, and no input format gets past it; this plugin writes drafts through the Gmail API instead. A standard-library script creates, updates and threads reply drafts, appends the Gmail signature, and reads the stored draft back to confirm no wrapped links. It never sends. One-time setup per person: an OAuth Desktop client and a browser sign-in, with the refresh token kept in ~/.claude/.env and never printed. It also writes in each person's own voice: one skill reads a batched, read-only sample of the user's own sent mail and writes a personal profile to ~/.claude/voice/profile.md (raw samples deleted afterwards, nothing committed or uploaded), and another drafts every email or message from that profile.",
   "author": {
     "name": "Avista",
