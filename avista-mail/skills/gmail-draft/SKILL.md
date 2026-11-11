@@ -1,6 +1,6 @@
 ---
 name: gmail-draft
-description: Create, update and reply-to Gmail drafts through the Gmail API with the bundled script instead of the Gmail connector, because the connector's create_draft, update_draft, reply and forward rewrite every link into a google.com/url?q=… redirect. Use whenever drafting or replying to an email, writing a Gmail draft, updating a draft, or any email that contains a link or URL — even when the user only says "skrifaðu póst", "svaraðu þessu", "draft a reply", "reply to this". Also use when someone says links in Claude's emails are "wrapped in google.com", "go through google.com/url" or "have a google redirect", or asks to set up Gmail draft access.
+description: Create, update and reply-to Gmail drafts through the Gmail API with the bundled script instead of the Gmail connector, because the connector's create_draft, update_draft, reply and forward rewrite every link into a google.com/url?q=… redirect. Use whenever drafting or replying to an email, writing a Gmail draft, updating a draft, or any email that contains a link, URL or bare domain name such as ison.is — even when the user only says "skrifaðu póst", "svaraðu þessu", "draft a reply", "reply to this". Also use when someone says links in Claude's emails are "wrapped in google.com", "go through google.com/url" or "have a google redirect", or asks to set up Gmail draft access.
 ---
 
 # Gmail drafts with real links
@@ -19,7 +19,8 @@ Reading mail with the connector is fine — received links come back as they wer
 
 ## Rule
 
-- **Every draft, reply or draft update goes through `scripts/gmail_draft.py`.** Do not call the connector's `create_draft`, `update_draft`, `reply` or `forward` to write mail.
+- **Every draft, reply or draft update goes through `scripts/gmail_draft.py`, with or without links.** Do not call the connector's `create_draft`, `update_draft`, `reply` or `forward` to write mail.
+- "No links" is not a reason to use the connector. Gmail turns a bare domain such as `ison.is` or `www.example.com` into a link and wraps that too (measured 2026-11-11: a reply that only said "kominn inn á ison.is" went out with `ison.is` pointing at `google.com/url?q=http://ison.is`). Deciding per email gets this wrong, so don't decide: always use the script.
 - Use the connector only to read: find the thread, `get_thread`, get the message id to reply to.
 - **Draft, don't send.** The script has no send command. The user sends from Gmail.
 - If the script isn't set up (`GMAIL_CLIENT_ID` / `GMAIL_CLIENT_SECRET` missing from `~/.claude/.env`), don't block on it: write the draft with the connector as usual, and when the draft contains links, list the real URLs under the draft link so the user can fix them in Gmail before sending. Mention Setup once, only if the user asks how to make it permanent.
