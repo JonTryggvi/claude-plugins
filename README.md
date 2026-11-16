@@ -13,6 +13,7 @@ Source code for the Claude plugins Avista distributes through its organization m
 | [`avista-memory-tools/`](avista-memory-tools/) | Maintenance tools for the agent-instructions, memory, and git-hygiene layers — CLAUDE.md bootstrap, CLAUDE.md audit, memory store linter, pre-push sync check, skill-bundle release workflow. |
 | [`avista-clarity/`](avista-clarity/) | Connect projects to Avista Clarity and push their pages for client review. Finds or creates the project by URL, links the repo with `.clarity.json`, syncs pages from the folder or the live sitemap, and deploys static sites to Cloudflare first when they aren't live. |
 | [`avista-mail/`](avista-mail/) | Gmail drafts and replies through the Gmail API so links stay real — the connector rewrites every link to a `google.com/url?q=` redirect — written in each person's own voice from a local profile built from their sent mail. |
+| [`avista-kb/`](avista-kb/) | Pick up and hand off work through the Avista knowledge base — an index in git of where each feature's code lives (repo, laptop or server-only), which sites run it, and what state it is in. |
 
 ## Working in this repo
 

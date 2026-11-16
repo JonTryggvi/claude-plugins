@@ -1,0 +1,359 @@
+#!/usr/bin/env python3
+"""Read and maintain the Avista knowledge base (avista-kb).
+
+Usage:
+  kb where [--set PATH]          print the KB path, or remember one
+  kb sync                        fast-forward the KB from its remote, if it has one
+  kb find TERM                   features and sites whose slug, title, domain or client match
+  kb feature SLUG                handoff + overview + each linked site, with link problems
+  kb site DOMAIN                 the site page + features that link to it
+  kb new-feature SLUG TITLE      create features/SLUG/ from templates (never overwrites)
+  kb link SLUG DOMAIN            add DOMAIN to the feature's sites: and SLUG to the site's features:
+  kb touch FILE                  set updated: to today on a KB page
+
+Locating the KB: $AVISTA_KB_DIR, then ~/.claude/avista-kb/config (path=…), then
+~/Dropbox/dev/avista-kb and ~/dev/avista-kb. Exit 3 means not found.
+Only the standard library is used; the frontmatter parser handles the subset the KB templates use.
+"""
+import datetime
+import os
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+CONFIG = Path.home() / ".claude" / "avista-kb" / "config"
+FALLBACKS = [Path.home() / "Dropbox" / "dev" / "avista-kb", Path.home() / "dev" / "avista-kb"]
+TODAY = datetime.date.today().isoformat()
+
+
+def die(msg: str, code: int = 1) -> None:
+  print(msg, file=sys.stderr)
+  sys.exit(code)
+
+
+def is_kb(p: Path) -> bool:
+  return (p / "templates" / "site.md").is_file() and (p / "features").is_dir()
+
+
+def kb_dir() -> Path:
+  candidates = []
+  if os.environ.get("AVISTA_KB_DIR"):
+    candidates.append(Path(os.environ["AVISTA_KB_DIR"]).expanduser())
+  if CONFIG.is_file():
+    for line in CONFIG.read_text().splitlines():
+      if line.startswith("path="):
+        candidates.append(Path(line[5:].strip()).expanduser())
+  candidates += FALLBACKS
+  for c in candidates:
+    if is_kb(c):
+      return c
+  die("KB_NOT_FOUND: no avista-kb checkout found. Clone it, or run: kb where --set <path>", 3)
+
+
+# --- frontmatter -----------------------------------------------------------
+
+def strip_comment(v: str) -> str:
+  # A ' #' outside quotes starts a comment.
+  out, quote = [], None
+  for i, ch in enumerate(v):
+    if quote:
+      if ch == quote:
+        quote = None
+    elif ch in "\"'":
+      quote = ch
+    elif ch == "#" and (i == 0 or v[i - 1] == " "):
+      break
+    out.append(ch)
+  return "".join(out).strip()
+
+
+def scalar(v: str):
+  v = strip_comment(v)
+  if v in ("", "null", "~"):
+    return None
+  if len(v) >= 2 and v[0] == v[-1] and v[0] in "\"'":
+    return v[1:-1]
+  if v.startswith("[") and v.endswith("]"):
+    inner = v[1:-1].strip()
+    return [scalar(x) for x in inner.split(",")] if inner else []
+  return v
+
+
+def split_page(text: str):
+  if not text.startswith("---\n"):
+    return [], text
+  end = text.find("\n---", 4)
+  if end == -1:
+    return [], text
+  return text[4:end].split("\n"), text[end + 4:].lstrip("\n")
+
+
+def parse(path: Path) -> dict:
+  lines, _ = split_page(path.read_text())
+  data, key, item = {}, None, None
+  for raw in lines:
+    if not raw.strip() or raw.lstrip().startswith("#"):
+      continue
+    top = re.match(r"^([A-Za-z_][\w-]*):\s*(.*)$", raw)
+    if top:
+      key, val = top.group(1), top.group(2)
+      data[key] = scalar(val) if strip_comment(val) else []
+      item = None
+      continue
+    li = re.match(r"^\s*-\s*(.*)$", raw)
+    if li and key is not None:
+      body = li.group(1)
+      kv = re.match(r"^([A-Za-z_][\w-]*):\s*(.*)$", body)
+      if kv:
+        item = {kv.group(1): scalar(kv.group(2))}
+        data[key].append(item)
+      else:
+        data[key].append(scalar(body))
+        item = None
+      continue
+    kv = re.match(r"^\s+([A-Za-z_][\w-]*):\s*(.*)$", raw)
+    if kv and isinstance(item, dict):
+      item[kv.group(1)] = scalar(kv.group(2))
+  return data
+
+
+def set_key(path: Path, key: str, value: str) -> None:
+  """Replace a top-level `key:` line in the frontmatter, keeping any trailing comment."""
+  text = path.read_text()
+  lines, body = split_page(text)
+  for i, raw in enumerate(lines):
+    m = re.match(rf"^{re.escape(key)}:\s*(.*)$", raw)
+    if m:
+      comment = ""
+      rest = m.group(1)
+      stripped = strip_comment(rest)
+      if len(rest.strip()) > len(stripped):
+        comment = "  " + rest.strip()[len(stripped):].strip()
+      lines[i] = f"{key}: {value}{comment}"
+      break
+  else:
+    lines.append(f"{key}: {value}")
+  path.write_text("---\n" + "\n".join(lines) + "\n---\n\n" + body)
+
+
+def flow(items) -> str:
+  return "[" + ", ".join(items) + "]"
+
+
+# --- helpers ---------------------------------------------------------------
+
+def norm_domain(d: str) -> str:
+  d = d.strip().lower()
+  d = re.sub(r"^https?://", "", d)
+  d = re.sub(r"^www\.", "", d)
+  return d.rstrip("/")
+
+
+def site_file(kb: Path, domain: str) -> Path:
+  return kb / "sites" / (norm_domain(domain).replace("/", "--") + ".md")
+
+
+def feature_dir(kb: Path, slug: str) -> Path:
+  return kb / "features" / slug
+
+
+def as_list(v) -> list:
+  if v is None:
+    return []
+  return v if isinstance(v, list) else [v]
+
+
+def days_old(updated):
+  try:
+    return (datetime.date.today() - datetime.date.fromisoformat(str(updated))).days
+  except ValueError:
+    return None
+
+
+def show(path: Path, kb: Path) -> None:
+  print(f"\n===== {path.relative_to(kb)} =====")
+  print(path.read_text().rstrip())
+
+
+# --- commands --------------------------------------------------------------
+
+def cmd_where(args: list) -> None:
+  if len(args) == 2 and args[0] == "--set":
+    p = Path(args[1]).expanduser().resolve()
+    if not is_kb(p):
+      die(f"{p} does not look like avista-kb (no templates/site.md)")
+    CONFIG.parent.mkdir(parents=True, exist_ok=True)
+    CONFIG.write_text(f"path={p}\n")
+    print(p)
+    return
+  print(kb_dir())
+
+
+def git(kb: Path, *a: str) -> subprocess.CompletedProcess:
+  return subprocess.run(["git", "-C", str(kb), *a], capture_output=True, text=True)
+
+
+def cmd_sync(args: list) -> None:
+  kb = kb_dir()
+  if not git(kb, "remote").stdout.strip():
+    print(f"no remote: using the local KB at {kb} as is")
+    return
+  dirty = git(kb, "status", "--porcelain").stdout.strip()
+  branch = git(kb, "branch", "--show-current").stdout.strip()
+  if dirty or branch != "main":
+    print(f"not syncing: branch={branch or '?'} dirty={'yes' if dirty else 'no'}; reading the KB as it is")
+    return
+  r = git(kb, "pull", "--ff-only", "--quiet")
+  print("synced" if r.returncode == 0 else f"pull failed, reading local copy: {r.stderr.strip()}")
+
+
+def cmd_find(args: list) -> None:
+  if not args:
+    die("usage: kb find TERM", 2)
+  kb, term = kb_dir(), " ".join(args).lower()
+  hits = 0
+  for ov in sorted((kb / "features").glob("*/overview.md")):
+    d = parse(ov)
+    hay = " ".join(str(x) for x in [ov.parent.name, d.get("title"), d.get("owner"), *as_list(d.get("sites"))]).lower()
+    if term in hay:
+      hits += 1
+      print(f"feature  {ov.parent.name:30} {d.get('title') or ''} [{d.get('status') or '?'}] updated {d.get('updated') or '?'}")
+  for sp in sorted((kb / "sites").glob("*.md")):
+    d = parse(sp)
+    hay = " ".join(str(x) for x in [d.get("domain"), d.get("client"), *as_list(d.get("features"))]).lower()
+    if term in hay:
+      hits += 1
+      print(f"site     {d.get('domain') or sp.stem:30} {d.get('client') or ''} features={flow(as_list(d.get('features')))}")
+  for cp in sorted((kb / "clients").glob("*.md")):
+    d = parse(cp)
+    if term in f"{cp.stem} {d.get('client')}".lower():
+      hits += 1
+      print(f"client   {cp.stem:30} {d.get('client') or ''}")
+  if not hits:
+    print(f"no KB page matches '{term}' (searched features/*/overview.md, sites/, clients/ frontmatter)")
+
+
+def cmd_feature(args: list) -> None:
+  if len(args) != 1:
+    die("usage: kb feature SLUG", 2)
+  kb, slug = kb_dir(), args[0]
+  fd = feature_dir(kb, slug)
+  if not fd.is_dir():
+    die(f"FEATURE_NOT_FOUND: features/{slug}/ — try: kb find {slug}", 4)
+  problems = []
+  for name in ("handoff.md", "overview.md"):
+    p = fd / name
+    if p.is_file():
+      show(p, kb)
+    else:
+      problems.append(f"missing features/{slug}/{name}")
+  for extra in sorted(fd.glob("*.md")):
+    if extra.name not in ("handoff.md", "overview.md"):
+      show(extra, kb)
+  ov = parse(fd / "overview.md") if (fd / "overview.md").is_file() else {}
+  ho = parse(fd / "handoff.md") if (fd / "handoff.md").is_file() else {}
+  for domain in as_list(ov.get("sites")):
+    sp = site_file(kb, str(domain))
+    if not sp.is_file():
+      problems.append(f"site {domain} is listed but sites/{sp.name} does not exist")
+      continue
+    show(sp, kb)
+    sd = parse(sp)
+    if slug not in as_list(sd.get("features")):
+      problems.append(f"sites/{sp.name} does not list '{slug}' in features:")
+    for c in as_list(sd.get("code")):
+      if isinstance(c, dict) and c.get("lives") == "server-only":
+        problems.append(f"{domain}: {c.get('path')} is server-only (no repo)")
+  for sp in sorted((kb / "sites").glob("*.md")):
+    sd = parse(sp)
+    if slug in as_list(sd.get("features")) and str(sd.get("domain")) not in [str(x) for x in as_list(ov.get("sites"))]:
+      problems.append(f"sites/{sp.name} lists '{slug}' but the overview's sites: does not include {sd.get('domain')}")
+  for label, d in (("handoff", ho), ("overview", ov)):
+    age = days_old(d.get("updated"))
+    if age is not None and age > 60:
+      problems.append(f"{label} last updated {d.get('updated')} ({age} days ago)")
+  print("\n===== KB problems =====")
+  print("\n".join(f"- {p}" for p in problems) if problems else "none")
+
+
+def cmd_site(args: list) -> None:
+  if len(args) != 1:
+    die("usage: kb site DOMAIN", 2)
+  kb = kb_dir()
+  sp = site_file(kb, args[0])
+  if not sp.is_file():
+    die(f"SITE_NOT_FOUND: sites/{sp.name} — seed it with: {kb}/scripts/seed-sites.sh {norm_domain(args[0])}", 4)
+  show(sp, kb)
+  domain = parse(sp).get("domain")
+  linked = [ov.parent.name for ov in sorted((kb / "features").glob("*/overview.md"))
+            if str(domain) in [str(x) for x in as_list(parse(ov).get("sites"))]]
+  print(f"\nfeatures whose overview lists this site: {flow(linked) if linked else 'none'}")
+
+
+def cmd_new_feature(args: list) -> None:
+  if len(args) < 2:
+    die("usage: kb new-feature SLUG TITLE", 2)
+  kb, slug, title = kb_dir(), args[0], " ".join(args[1:])
+  if not re.fullmatch(r"[a-z0-9][a-z0-9-]*", slug):
+    die("slug must be lowercase letters, digits and dashes", 2)
+  fd = feature_dir(kb, slug)
+  if fd.exists():
+    die(f"features/{slug}/ already exists; not overwriting", 5)
+  fd.mkdir(parents=True)
+  pairs = {"overview.md": "feature-overview.md", "handoff.md": "feature-handoff.md"}
+  for dst, src in pairs.items():
+    text = (kb / "templates" / src).read_text()
+    text = text.replace("example-feature", slug).replace("Example feature", title)
+    text = re.sub(r"^updated: .*$", f"updated: {TODAY}", text, flags=re.M)
+    (fd / dst).write_text(text)
+    print(f"created features/{slug}/{dst}")
+
+
+def cmd_link(args: list) -> None:
+  if len(args) != 2:
+    die("usage: kb link SLUG DOMAIN", 2)
+  kb, slug, domain = kb_dir(), args[0], norm_domain(args[1])
+  ov = feature_dir(kb, slug) / "overview.md"
+  sp = site_file(kb, domain)
+  if not ov.is_file():
+    die(f"FEATURE_NOT_FOUND: features/{slug}/overview.md — create it with: kb new-feature {slug} \"Title\"", 4)
+  if not sp.is_file():
+    die(f"SITE_NOT_FOUND: sites/{sp.name} — seed it with: {kb}/scripts/seed-sites.sh {domain}", 4)
+  sites = [str(x) for x in as_list(parse(ov).get("sites"))]
+  if domain not in sites:
+    set_key(ov, "sites", flow(sites + [domain]))
+    set_key(ov, "updated", TODAY)
+    print(f"features/{slug}/overview.md: sites += {domain}")
+  feats = [str(x) for x in as_list(parse(sp).get("features"))]
+  if slug not in feats:
+    set_key(sp, "features", flow(feats + [slug]))
+    set_key(sp, "updated", TODAY)
+    print(f"sites/{sp.name}: features += {slug}")
+
+
+def cmd_touch(args: list) -> None:
+  if len(args) != 1:
+    die("usage: kb touch FILE", 2)
+  p = Path(args[0])
+  if not p.is_file():
+    p = kb_dir() / args[0]
+  set_key(p, "updated", TODAY)
+  print(f"{p}: updated: {TODAY}")
+
+
+COMMANDS = {
+  "where": cmd_where,
+  "sync": cmd_sync,
+  "find": cmd_find,
+  "feature": cmd_feature,
+  "site": cmd_site,
+  "new-feature": cmd_new_feature,
+  "link": cmd_link,
+  "touch": cmd_touch,
+}
+
+if __name__ == "__main__":
+  if len(sys.argv) < 2 or sys.argv[1] not in COMMANDS:
+    die(__doc__, 2)
+  COMMANDS[sys.argv[1]](sys.argv[2:])

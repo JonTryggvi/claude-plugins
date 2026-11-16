@@ -75,6 +75,11 @@
       "name": "avista-mail",
       "source": "./avista-mail",
       "description": "Email for Claude in Avista's Gmail, with links that stay real. The Gmail connector's create_draft, update_draft, reply and forward rewrite every link into an expiring google.com/url?q= redirect before saving the draft, and no input format gets past it; this plugin writes drafts through the Gmail API instead. A standard-library script creates, updates and threads reply drafts, appends the Gmail signature, and reads the stored draft back to confirm no wrapped links. It never sends. One-time setup per person: an OAuth Desktop client and a browser sign-in, with the refresh token kept in ~/.claude/.env and never printed. It also writes in each person's own voice: one skill reads a batched, read-only sample of the user's own sent mail and writes a personal profile to ~/.claude/voice/profile.md (raw samples deleted afterwards, nothing committed or uploaded), and another drafts every email or message from that profile."
+    },
+    {
+      "name": "avista-kb",
+      "source": "./avista-kb",
+      "description": "Pick up and hand off work through the Avista knowledge base, a git repo of markdown pages that index where each feature's code lives (org repo, a laptop, or only on a production server), which sites it runs on and what state it is in. kb-pickup reads a feature's handoff, overview and site pages and gives a cold-start briefing: where the code is, how to reach it, what is done and what is next, plus what the KB is missing. kb-handoff writes the end-of-session handoff from the session and git log, creates the feature page from templates if none exists, keeps feature↔site links in both directions, and commits locally (on a review branch when the KB has a remote). The KB never holds code or secrets, only 1Password references."
     }
   ]
 }

@@ -1,0 +1,17 @@
+{
+  "name": "avista-kb",
+  "version": "0.1.0",
+  "description": "Pick up and hand off work through the Avista knowledge base, a git repo of markdown pages that index where each feature's code lives (org repo, a laptop, or only on a production server), which sites it runs on and what state it is in. kb-pickup reads a feature's handoff, overview and site pages and gives a cold-start briefing: where the code is, how to reach it, what is done and what is next, plus what the KB is missing. kb-handoff writes the end-of-session handoff from the session and git log, creates the feature page from templates if none exists, keeps feature↔site links in both directions, and commits locally (on a review branch when the KB has a remote). The KB never holds code or secrets, only 1Password references.",
+  "author": {
+    "name": "Avista",
+    "url": "https://avista.is"
+  },
+  "homepage": "https://avista.is",
+  "keywords": [
+    "knowledge-base",
+    "handoff",
+    "documentation",
+    "wordpress",
+    "avista"
+  ]
+}
