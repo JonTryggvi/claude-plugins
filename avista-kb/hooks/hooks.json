@@ -1,0 +1,28 @@
+{
+  "description": "avista-kb: tell Claude whether the current repo or SSH site is tracked in the Avista knowledge base, so kb-handoff can offer tracking at the right moment",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/kb_hook.py\" session-start",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/kb_hook.py\" post-bash",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

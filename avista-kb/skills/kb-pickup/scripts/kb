@@ -1,19 +1,23 @@
 #!/usr/bin/env python3
-"""Read and maintain the Avista knowledge base (avista-kb).
+"""Read and maintain the Avista knowledge base (Avista/avista-knowledge-base).
 
 Usage:
-  kb where [--set PATH]          print the KB path, or remember one
-  kb sync                        fast-forward the KB from its remote, if it has one
+  kb where [--set PATH]          print the knowledge base path, or remember one
+  kb config [KEY [VALUE|--unset]] read or set ~/.claude/avista-kb/config (path, share, setup, snooze)
+  kb sync                        fast-forward the knowledge base from its remote, if it has one
   kb find TERM                   features and sites whose slug, title, domain or client match
   kb feature SLUG                handoff + overview + each linked site, with link problems
   kb site DOMAIN                 the site page + features that link to it
   kb new-feature SLUG TITLE      create features/SLUG/ from templates (never overwrites)
   kb link SLUG DOMAIN            add DOMAIN to the feature's sites: and SLUG to the site's features:
-  kb touch FILE                  set updated: to today on a KB page
+  kb status SLUG STATUS          set the feature's status; adds the draft banner for draft, removes it otherwise
+  kb tracked DOMAIN|REPO …       features already tracking these sites or repos (owner/repo or a
+                                 git remote URL), with status; no output = not tracked
+  kb touch FILE                  set updated: to today on a knowledge base page
 
-Locating the KB: $AVISTA_KB_DIR, then ~/.claude/avista-kb/config (path=…), then
-~/Dropbox/dev/avista-kb and ~/dev/avista-kb. Exit 3 means not found.
-Only the standard library is used; the frontmatter parser handles the subset the KB templates use.
+Locating the knowledge base: $AVISTA_KB_DIR, then ~/.claude/avista-kb/config (path=…), then
+~/Dropbox/dev/avista-knowledge-base and ~/dev/avista-knowledge-base. Exit 3 means not found.
+Only the standard library is used; the frontmatter parser handles the subset the knowledge base templates use.
 """
 import datetime
 import os
@@ -23,8 +27,10 @@ import sys
 from pathlib import Path
 
 CONFIG = Path.home() / ".claude" / "avista-kb" / "config"
-FALLBACKS = [Path.home() / "Dropbox" / "dev" / "avista-kb", Path.home() / "dev" / "avista-kb"]
+FALLBACKS = [Path.home() / "Dropbox" / "dev" / "avista-knowledge-base", Path.home() / "dev" / "avista-knowledge-base"]
 TODAY = datetime.date.today().isoformat()
+STATUSES = ["draft", "active", "paused", "done", "retired"]
+BANNER = "> **Draft:** written while the work is in progress, so it may be incomplete or out of date."
 
 
 def die(msg: str, code: int = 1) -> None:
@@ -36,19 +42,40 @@ def is_kb(p: Path) -> bool:
   return (p / "templates" / "site.md").is_file() and (p / "features").is_dir()
 
 
+CONFIG_KEYS = {
+  "path": "where the knowledge base clone is",
+  "share": "pr | push | local: what kb-handoff does after committing",
+  "setup": "done once kb-setup has finished",
+  "snooze": "YYYY-MM-DD: don't offer kb-setup before this date",
+}
+
+
+def read_config() -> dict:
+  conf = {}
+  if CONFIG.is_file():
+    for line in CONFIG.read_text().splitlines():
+      if "=" in line and not line.lstrip().startswith("#"):
+        k, v = line.split("=", 1)
+        conf[k.strip()] = v.strip()
+  return conf
+
+
+def write_config(conf: dict) -> None:
+  CONFIG.parent.mkdir(parents=True, exist_ok=True)
+  CONFIG.write_text("".join(f"{k}={v}\n" for k, v in conf.items()))
+
+
 def kb_dir() -> Path:
   candidates = []
   if os.environ.get("AVISTA_KB_DIR"):
     candidates.append(Path(os.environ["AVISTA_KB_DIR"]).expanduser())
-  if CONFIG.is_file():
-    for line in CONFIG.read_text().splitlines():
-      if line.startswith("path="):
-        candidates.append(Path(line[5:].strip()).expanduser())
+  if read_config().get("path"):
+    candidates.append(Path(read_config()["path"]).expanduser())
   candidates += FALLBACKS
   for c in candidates:
     if is_kb(c):
       return c
-  die("KB_NOT_FOUND: no avista-kb checkout found. Clone it, or run: kb where --set <path>", 3)
+  die("KB_NOT_FOUND: no clone of the knowledge base found. Clone it with: gh repo clone Avista/avista-knowledge-base, or point to one with: kb where --set <path>", 3)
 
 
 # --- frontmatter -----------------------------------------------------------
@@ -182,12 +209,35 @@ def cmd_where(args: list) -> None:
   if len(args) == 2 and args[0] == "--set":
     p = Path(args[1]).expanduser().resolve()
     if not is_kb(p):
-      die(f"{p} does not look like avista-kb (no templates/site.md)")
-    CONFIG.parent.mkdir(parents=True, exist_ok=True)
-    CONFIG.write_text(f"path={p}\n")
+      die(f"{p} does not look like the knowledge base repo (no templates/site.md)")
+    conf = read_config()
+    conf["path"] = str(p)
+    write_config(conf)
     print(p)
     return
   print(kb_dir())
+
+
+def cmd_config(args: list) -> None:
+  conf = read_config()
+  if not args:
+    for k, v in conf.items():
+      print(f"{k}={v}")
+    return
+  key = args[0]
+  if key not in CONFIG_KEYS:
+    die("keys: " + "; ".join(f"{k} ({d})" for k, d in CONFIG_KEYS.items()), 2)
+  if len(args) == 1:
+    print(conf.get(key, ""))
+    return
+  if args[1] == "--unset":
+    conf.pop(key, None)
+  elif key == "share" and args[1] not in ("pr", "push", "local"):
+    die("share must be pr, push or local", 2)
+  else:
+    conf[key] = args[1]
+  write_config(conf)
+  print(f"{key}={conf.get(key, '')}")
 
 
 def git(kb: Path, *a: str) -> subprocess.CompletedProcess:
@@ -197,12 +247,12 @@ def git(kb: Path, *a: str) -> subprocess.CompletedProcess:
 def cmd_sync(args: list) -> None:
   kb = kb_dir()
   if not git(kb, "remote").stdout.strip():
-    print(f"no remote: using the local KB at {kb} as is")
+    print(f"no remote: using the local knowledge base at {kb} as is")
     return
   dirty = git(kb, "status", "--porcelain").stdout.strip()
   branch = git(kb, "branch", "--show-current").stdout.strip()
   if dirty or branch != "main":
-    print(f"not syncing: branch={branch or '?'} dirty={'yes' if dirty else 'no'}; reading the KB as it is")
+    print(f"not syncing: branch={branch or '?'} dirty={'yes' if dirty else 'no'}; reading the knowledge base as it is")
     return
   r = git(kb, "pull", "--ff-only", "--quiet")
   print("synced" if r.returncode == 0 else f"pull failed, reading local copy: {r.stderr.strip()}")
@@ -215,7 +265,8 @@ def cmd_find(args: list) -> None:
   hits = 0
   for ov in sorted((kb / "features").glob("*/overview.md")):
     d = parse(ov)
-    hay = " ".join(str(x) for x in [ov.parent.name, d.get("title"), d.get("owner"), *as_list(d.get("sites"))]).lower()
+    hay = " ".join(str(x) for x in [ov.parent.name, d.get("title"), d.get("owner"),
+                                     *as_list(d.get("sites")), *as_list(d.get("repos"))]).lower()
     if term in hay:
       hits += 1
       print(f"feature  {ov.parent.name:30} {d.get('title') or ''} [{d.get('status') or '?'}] updated {d.get('updated') or '?'}")
@@ -231,7 +282,7 @@ def cmd_find(args: list) -> None:
       hits += 1
       print(f"client   {cp.stem:30} {d.get('client') or ''}")
   if not hits:
-    print(f"no KB page matches '{term}' (searched features/*/overview.md, sites/, clients/ frontmatter)")
+    print(f"no knowledge base page matches '{term}' (searched features/*/overview.md, sites/, clients/ frontmatter)")
 
 
 def cmd_feature(args: list) -> None:
@@ -253,6 +304,8 @@ def cmd_feature(args: list) -> None:
       show(extra, kb)
   ov = parse(fd / "overview.md") if (fd / "overview.md").is_file() else {}
   ho = parse(fd / "handoff.md") if (fd / "handoff.md").is_file() else {}
+  if ov.get("status") == "draft":
+    problems.insert(0, "DRAFT: written while the work is in progress, so treat it as working notes, not a finished record")
   for domain in as_list(ov.get("sites")):
     sp = site_file(kb, str(domain))
     if not sp.is_file():
@@ -273,7 +326,7 @@ def cmd_feature(args: list) -> None:
     age = days_old(d.get("updated"))
     if age is not None and age > 60:
       problems.append(f"{label} last updated {d.get('updated')} ({age} days ago)")
-  print("\n===== KB problems =====")
+  print("\n===== Knowledge base problems =====")
   print("\n".join(f"- {p}" for p in problems) if problems else "none")
 
 
@@ -332,6 +385,61 @@ def cmd_link(args: list) -> None:
     print(f"sites/{sp.name}: features += {slug}")
 
 
+def set_banner(path: Path, on: bool) -> None:
+  """Add the draft banner under the first '# ' heading, or remove it."""
+  lines = path.read_text().split("\n")
+  had = [i for i, l in enumerate(lines) if l.startswith("> **Draft:**")]
+  for i in reversed(had):
+    del lines[i]
+    if i < len(lines) and lines[i] == "" and i > 0 and lines[i - 1] == "":
+      del lines[i]
+  if on:
+    head = next((i for i, l in enumerate(lines) if l.startswith("# ")), None)
+    if head is not None:
+      lines[head + 1:head + 1] = ["", BANNER]
+  path.write_text("\n".join(lines))
+
+
+def cmd_status(args: list) -> None:
+  if len(args) != 2 or args[1] not in STATUSES:
+    die(f"usage: kb status SLUG {{{'|'.join(STATUSES)}}}", 2)
+  kb, slug, status = kb_dir(), args[0], args[1]
+  fd = feature_dir(kb, slug)
+  ov = fd / "overview.md"
+  if not ov.is_file():
+    die(f"FEATURE_NOT_FOUND: features/{slug}/overview.md", 4)
+  old = parse(ov).get("status")
+  set_key(ov, "status", status)
+  set_key(ov, "updated", TODAY)
+  for name in ("overview.md", "handoff.md"):
+    if (fd / name).is_file():
+      set_banner(fd / name, status == "draft")
+  print(f"features/{slug}: status {old} -> {status}")
+
+
+def repo_slug(s: str):
+  """Return 'owner/repo' (lowercased) for a repo slug or git remote URL, or None for a domain."""
+  s = s.strip()
+  m = re.match(r"^(?:git@[^:]+:|https?://[^/]+/|ssh://[^/]+/)?([\w-]+)/([\w.-]+?)(?:\.git)?/?$", s)
+  if not m or "." in m.group(1):
+    return None
+  return f"{m.group(1)}/{m.group(2)}".lower()
+
+
+def cmd_tracked(args: list) -> None:
+  if not args:
+    die("usage: kb tracked DOMAIN|OWNER/REPO|REMOTE_URL [...]", 2)
+  kb = kb_dir()
+  repos = {repo_slug(a) for a in args if repo_slug(a)}
+  domains = {norm_domain(a) for a in args if not repo_slug(a)}
+  for ov in sorted((kb / "features").glob("*/overview.md")):
+    d = parse(ov)
+    hit = sorted(domains & {norm_domain(str(x)) for x in as_list(d.get("sites"))})
+    hit += sorted(repos & {str(x).lower() for x in as_list(d.get("repos"))})
+    if hit:
+      print(f"{ov.parent.name}\t{d.get('status') or '?'}\t{','.join(hit)}\t{d.get('title') or ''}")
+
+
 def cmd_touch(args: list) -> None:
   if len(args) != 1:
     die("usage: kb touch FILE", 2)
@@ -344,12 +452,15 @@ def cmd_touch(args: list) -> None:
 
 COMMANDS = {
   "where": cmd_where,
+  "config": cmd_config,
   "sync": cmd_sync,
   "find": cmd_find,
   "feature": cmd_feature,
   "site": cmd_site,
   "new-feature": cmd_new_feature,
   "link": cmd_link,
+  "status": cmd_status,
+  "tracked": cmd_tracked,
   "touch": cmd_touch,
 }
 

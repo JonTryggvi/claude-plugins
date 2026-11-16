@@ -1,7 +1,7 @@
 {
   "name": "avista-kb",
-  "version": "0.1.0",
-  "description": "Pick up and hand off work through the Avista knowledge base, a git repo of markdown pages that index where each feature's code lives (org repo, a laptop, or only on a production server), which sites it runs on and what state it is in. kb-pickup reads a feature's handoff, overview and site pages and gives a cold-start briefing: where the code is, how to reach it, what is done and what is next, plus what the KB is missing. kb-handoff writes the end-of-session handoff from the session and git log, creates the feature page from templates if none exists, keeps feature↔site links in both directions, and commits locally (on a review branch when the KB has a remote). The KB never holds code or secrets, only 1Password references.",
+  "version": "0.2.0",
+  "description": "Track and pick up work through the Avista knowledge base, a git repo of markdown pages that index where each feature's code lives (its own git repo, a laptop, or only on a production server), which sites it runs on and what state it is in. Setup is one dialog: kb-setup clones the knowledge base, saves where it is, asks how handoffs should reach colleagues (pull request, push or local, changeable any time) and checks the hooks run; a new install prompts for it on its own. kb-handoff tracks a feature from the moment work starts: one picker explains the knowledge base and offers to track it, the page is created marked draft, and after that the handoff and code locations are updated and shared at the end of each session without asking, until a second picker marks it active. Works for plugin, theme and tool repos as well as SSH work on client sites. kb-pickup gives a cold-start briefing, flags drafts and gaps in the knowledge base, and can confirm paths read-only. The knowledge base never holds code or secrets, only 1Password references.",
   "author": {
     "name": "Avista",
     "url": "https://avista.is"
