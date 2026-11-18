@@ -211,6 +211,18 @@ else
   gap "global CLAUDE.md missing" "setup-agent-toolkit (Step 3)"
 fi
 
+DOCS_DIR="$HOME/.claude/avista-docs"
+if [ -d "$DOCS_DIR/engineering/standards" ]; then
+  ok "~/.claude/avista-docs" "standards present$( [ -L "$DOCS_DIR" ] && echo ' (link)')"
+else
+  bad "~/.claude/avista-docs" "missing — the house-rule imports load nothing"
+  gap "avista-docs not at ~/.claude/avista-docs" "setup-agent-toolkit (Step 3a)"
+fi
+if [ -f "$HOME/.claude/CLAUDE.md" ] && ! grep -q '^@~/.claude/avista-docs/' "$HOME/.claude/CLAUDE.md"; then
+  bad "house-rule imports" "~/.claude/CLAUDE.md has no @~/.claude/avista-docs/ lines"
+  gap "house rules not imported from avista-docs" "setup-agent-toolkit (Step 3b)"
+fi
+
 ENV_FILE="$HOME/.claude/.env"
 if [ -f "$ENV_FILE" ]; then
   mode="$(stat -f '%Lp' "$ENV_FILE" 2>/dev/null)"

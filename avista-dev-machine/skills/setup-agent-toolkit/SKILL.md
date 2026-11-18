@@ -112,17 +112,47 @@ Explain: "This file is the house rules — how we do git, how we format PHP and 
 guards. It's loaded automatically in every session, on every project, so you don't have to repeat any of
 it."
 
-It belongs at `~/.claude/CLAUDE.md`. This skill bundles the team baseline at
-`references/global-claude-md.template`.
+The rules themselves live in the **avista-docs** repo (`engineering/standards/`), reviewed through
+pull requests. `~/.claude/CLAUDE.md` doesn't copy them. It imports them with `@` lines from one fixed
+path, `~/.claude/avista-docs`, so a merged change reaches everyone on their next `git pull` and no copy
+drifts.
 
-- **No file there yet** — copy the template in.
-- **A file is already there** — this one is hand-curated and often has personal sections. **Never
-  overwrite it.** Back it up to `~/.claude/backups/<timestamp>/`, then show the person a diff of which
-  baseline sections are missing from theirs and let them choose which to append. Append whole sections
-  under their own headings; do not interleave or reword what they already wrote.
+### 3a. Put avista-docs at `~/.claude/avista-docs`
 
-The template deliberately holds only the **shared** rules. Personal preferences, machine-specific paths
-and account details stay out of it — those belong in each person's own additions to the file.
+Check first: `ls -la ~/.claude/avista-docs`.
+
+- **Already a clone or a link to one** — `git -C ~/.claude/avista-docs pull` and move on.
+- **The person already has a clone elsewhere** (ask, or `find ~ -maxdepth 4 -type d -name avista-docs
+  -path '*/avista-docs' 2>/dev/null`) — link it: `ln -s <their clone> ~/.claude/avista-docs`.
+- **No clone** — clone straight into place, keep the remote canonical, and opt it in to the Avista key
+  (the `~/.gitconfig-avista` routing from `setup-dev-machine`):
+
+  ```bash
+  git clone git@github.com-avista:Avista/avista-docs.git ~/.claude/avista-docs
+  git -C ~/.claude/avista-docs remote set-url origin git@github.com:Avista/avista-docs.git
+  git -C ~/.claude/avista-docs config --local include.path '~/.gitconfig-avista'
+  ```
+
+  A single-account Mac without the alias clones `git@github.com:Avista/avista-docs.git` directly.
+
+Confirm with `ls ~/.claude/avista-docs/engineering/standards/`. If that fails, the imports load nothing.
+
+### 3b. Write the imports
+
+This skill bundles the imports at `references/global-claude-md.template`.
+
+- **No `~/.claude/CLAUDE.md` yet** — copy the template in.
+- **A file is already there** — it's hand-curated and often has personal sections. **Never overwrite
+  it.** Back it up to `~/.claude/backups/<timestamp>/` first. Then:
+  - Add the template's `@~/.claude/avista-docs/...` lines at the top if they're missing.
+  - Older setups copied the house rules in as sections (Git Workflow, General Coding Style, PHP,
+    JavaScript, WordPress — Composer / vendor, Figma design assets, Knowledge base, Time estimates and
+    so on). Those are now duplicates of the imported pages, and they drift. Show the person which of
+    their sections match an imported page and offer to remove them. Remove only the ones they approve,
+    and leave anything personal or reworded alone.
+
+The template holds only the imports. Personal preferences, machine-specific paths and account details
+go below them, in each person's own sections.
 
 > Do not use `bootstrap-agent-md` (in `avista-memory-tools`) for this file. That skill generates
 > *project-local* `CLAUDE.md` files from a codebase. The global file is curated, not generated.
@@ -215,7 +245,9 @@ callback URL in chat.
 
 ```bash
 command -v claude && claude --version                 # Claude Code on PATH
-ls ~/.claude/CLAUDE.md                                # house rules present
+ls ~/.claude/CLAUDE.md                                # global file present
+grep -c '^@~/.claude/avista-docs/' ~/.claude/CLAUDE.md # imports present (expect 7)
+ls ~/.claude/avista-docs/engineering/standards/       # the imported pages exist
 stat -f '%Lp' ~/.claude/.env                          # must print 600
 grep -oE '^[A-Z_]+' ~/.claude/.env                    # expected key NAMES only
 ```
@@ -242,8 +274,8 @@ Report each result in plain language ("✅ your tokens are stored and locked to 
 
 ## Bundled files
 
-- `references/global-claude-md.template` — the shared house rules for `~/.claude/CLAUDE.md` (git
-  workflow, sandbox detection, coding style, PHP/JS conventions, WordPress vendor guards).
+- `references/global-claude-md.template` — the `@` imports of the house rules from
+  `~/.claude/avista-docs/engineering/standards/`. The rules themselves are in the avista-docs repo.
 - `references/env.template` — commented `~/.claude/.env` skeleton with a placeholder per token. Copy the
   structure; fill values per Step 4.
 
