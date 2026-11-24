@@ -153,7 +153,7 @@ grep -n "v5p[0-9]" <updater-file>        # must print nothing
 grep -n "AVISTA_UPDATE_CHANNEL\|vcs_update_detection_strategies\|RELEASE_FILTER_ALL" <updater-file>
 ```
 
-Then the plugin's own tests, if it has a `tests.yml` workflow.
+Then the plugin's own tests, if it has a test workflow such as `tests.yml`. `release-plugin` → Step 1 will not release a commit without a green run of it.
 
 ## 4. Release and confirm
 

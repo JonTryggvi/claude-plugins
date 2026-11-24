@@ -59,6 +59,22 @@ Run these checks before touching anything. Bail if any fail.
   ```
 
   Record the stable pattern as `STABLE_RE`, e.g. `'/avista-core-v[\d.]+\.zip($|[?&#])/i'`. If there is a beta pattern, record it as `BETA_RE`. If there is **no** `vcs_update_detection_strategies` filter, the installed updater still has PUC's tag fallback. In that case, do not cut a beta that outranks `LATEST` until the plugin has shipped the retrofit (`setup-plugin-autoupdate` → `references/retrofit.md`), because stable sites could be handed that beta's source zip. **Finding the filter in the source is not enough.** Sites run what they have installed, so the same rule holds until the first release carrying the filter has reached the fleet. That takes about a week under Hub Automate. Check the fleet inventory, and see `retrofit.md` → "Shipped" for the plugins already retrofitted and their dates.
+- **The tests passed on this exact commit.** Check the commit you are about to bump, `SHA=$(git rev-parse HEAD)` after the sync check. The bump commit in Step 4 only changes the version, so a green run here is what clears the release (Step 6 also checks the bump commit's run). The test workflows are the ones under `.github/workflows/` that run on `push` or `pull_request`, i.e. everything except the build workflow. ACMA's is `tests.yml`, named "Tests":
+
+  ```bash
+  grep -nA3 "^on:" .github/workflows/*.yml
+  SHA=$(git rev-parse HEAD)
+  gh run list -R "$R" --workflow <test-workflow>.yml --commit "$SHA" \
+    --json event,status,conclusion,databaseId --jq '.[] | [.event, .status, .conclusion, .databaseId] | @tsv'
+  ```
+
+  Every run listed must be `completed` with `success`. Anything else stops the release:
+  - **A failure.** Bail. Name the failing workflow and job, and show the error from `gh run view <databaseId> -R "$R" --log-failed`. Fix it on the branch and rerun the skill. Do not release over it, even when the failure looks unrelated to this release.
+  - **Still running.** Wait with `gh run watch <databaseId> -R "$R" --exit-status`, or ask the user. Then apply the rule above.
+  - **No run for this commit.** Never assume green. A push runs the tests only on the commit it ends on, so commits that are ahead of `origin` have no run. Push `BRANCH` first, once the user has confirmed those commits belong in the release, then wait for the run. If the commit is on `origin` and still has no run, start one with `gh workflow run <test-workflow>.yml -R "$R" --ref "$BRANCH"` when the workflow has `workflow_dispatch`. Otherwise ask the user. A common case is a beta branch with no PR open in a repo whose tests run on `push` only for `main`: pushing it starts nothing.
+
+  If the repo has no test workflow, say so in the report and carry on. This gate exists because ACMA shipped v0.33.3 and v0.33.4 on 2026-11-17 with "Tests" failing on both tagged commits. The breaking commit was pushed together with the v0.33.3 bump, so it never had a run of its own, and `main` stayed red for six days.
+- **A pull request merged for the release needs green checks.** The full-circle nicknames don't include merging a PR. If the user asks for one to be merged before releasing, run `gh pr checks <number> -R "$R"` first: every check must pass, and `--watch` waits for pending ones. A failing check stops the merge, as above. After the merge, pull `main` and run Step 1 again, because the merge commit is a new commit with a run of its own.
 
 If anything is dirty or missing, report it and stop — do not bump version or commit against an unclean tree, and do not release from a stale branch.
 
@@ -158,6 +174,8 @@ gh run watch "$RUN" -R "$R" --exit-status
 ```
 
 If `RUN` is empty, the run hasn't registered yet, so re-run the first line after a few seconds. It normally finishes in under two minutes.
+
+**Check the tests on the bump commit too.** Step 4's push started a test run on the bump commit, alongside this build, so it costs no extra wait. Run the Step 1 test check again with `SHA=$(git rev-parse HEAD)`, which is now the bump commit, and watch any run still in progress. A failure here is a failed Step 6. The bump can break a test that checks the version, such as a hardcoded constant that disagrees with the header.
 
 **Check the attached asset.** Exactly one zip must be attached, with state `uploaded`. Its name depends on how the plugin was scaffolded:
 

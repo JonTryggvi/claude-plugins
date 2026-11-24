@@ -44,6 +44,17 @@ Two modes, as in `release-plugin`:
 
   A `404` means no stable release yet, so treat `LATEST` as empty. Do **not** use `git describe --tags`, which reports the nearest beta as "the last release".
 - **Check the updater.** Run `grep -n "name_regex\|vcs_update_detection_strategies" functions.php inc/*.php 2>/dev/null`. Record the asset regex as `THEME_RE`, e.g. `'/islandiamagica\.zip($|[?&#])/i'`. If there is no `vcs_update_detection_strategies` filter, the installed updater still has PUC's tag fallback. In that case, do not cut a beta that outranks `LATEST` until the theme has the retrofit (`setup-theme-autoupdate` → "Retrofit an existing updater"). Having the filter in the source is not enough. The rule holds until the first release carrying it has reached the fleet, about a week under Hub Automate.
+- **The tests passed on this exact commit**, the one you are about to bump: `SHA=$(git rev-parse HEAD)` after the sync check. The bump commit only changes the version, so this run is the gate. The test workflows are the ones under `.github/workflows/` that run on `push` or `pull_request`, i.e. everything except the build workflow:
+
+  ```bash
+  grep -nA3 "^on:" .github/workflows/*.yml
+  SHA=$(git rev-parse HEAD)
+  gh run list -R "$R" --workflow <test-workflow>.yml --commit "$SHA" \
+    --json event,status,conclusion,databaseId --jq '.[] | [.event, .status, .conclusion, .databaseId] | @tsv'
+  ```
+
+  Every run listed must be `completed` with `success`. A failure stops the release: name the failing job and show `gh run view <databaseId> -R "$R" --log-failed`. A run still in progress: `gh run watch <databaseId> -R "$R" --exit-status`, or ask. No run for this commit: never assume green. Commits ahead of `origin` have none, so push `BRANCH` first, once the user has confirmed them, and wait for the run. A commit already on `origin` with no run gets `gh workflow run <test-workflow>.yml -R "$R" --ref "$BRANCH"` if the workflow has `workflow_dispatch`; otherwise ask. That includes a beta branch with no PR open when the tests run on `push` only for `main`: pushing it starts nothing. No test workflow at all: say so in the report and carry on. The reason is in `release-plugin` → Step 1: ACMA shipped two releases on a red "Tests" run.
+- **A pull request merged for the release needs green checks.** The full-circle nicknames don't include merging a PR. If the user asks for one to be merged first, `gh pr checks <number> -R "$R"` must pass in full (`--watch` waits for pending checks). After the merge, pull `main` and run Step 1 again: the merge commit has a run of its own.
 
 If anything is dirty or missing, report it and stop — and do not release from a stale branch.
 
@@ -141,6 +152,7 @@ unzip -l "$TMP/$ASSET" | grep -E "  <theme-slug>/(style\.css|functions\.php|vend
 Success means all of the following:
 
 - The workflow is green.
+- The tests on the bump commit are green. Step 4's push started them alongside the build. Rerun the Step 1 test check with `SHA=$(git rev-parse HEAD)`, which is now the bump commit, and watch any run still in progress.
 - Exactly one `<theme-slug>.zip` is attached with state `uploaded`, roughly the previous release's size.
 - It matches the theme's regex.
 - Its local sha256 equals GitHub's digest.
